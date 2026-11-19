@@ -94,7 +94,9 @@ class WindowsInkRecognizer implements HandwritingRecognizer {
       final res = await _ch.invokeListMethod<String>('recognize', {'lang': lang, 'strokes': data});
       return res ?? const [];
     } on MissingPluginException {
-      throw UnsupportedError('Windows el yazısı tanıma Faz 2\'de geliyor. Sayfa Android\'de tanınıp senkronla gelebilir.');
+      throw UnsupportedError('Windows el yazısı tanıma bu kurulumda yok.');
+    } on PlatformException catch (e) {
+      throw UnsupportedError(e.message ?? 'El yazısı tanınamadı');
     }
   }
 }

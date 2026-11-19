@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="Teknik Defter"
         android:name="${applicationName}"
@@ -32,6 +34,13 @@
                 <data android:mimeType="application/pdf"/>
                 <data android:mimeType="image/*"/>
             </intent-filter>
+            <!-- uygulama içi bağlantı: teknikdefter://page/<id>, //new, //call -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="teknikdefter"/>
+            </intent-filter>
             <!-- "Paylaş" menüsü (WhatsApp, Galeri, Dosyalar…) -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/>
@@ -45,6 +54,17 @@
                 <data android:mimeType="image/*"/>
             </intent-filter>
         </activity>
+        <receiver android:name=".CallReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE"/>
+            </intent-filter>
+        </receiver>
+        <receiver android:name=".QuickWidget" android:exported="false" android:label="Teknik Defter">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_info"/>
+        </receiver>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

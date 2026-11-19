@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'media/asset_images.dart';
+import 'models/note_models.dart';
 import 'media/export_import.dart';
+import 'media/platform_extras.dart';
 import 'recognition/handwriting.dart';
 import 'storage/local_store.dart';
 import 'sync/drive_sync.dart';
@@ -50,7 +52,14 @@ class IncomingFiles {
   Future<void> _handle(List<String> paths) async {
     for (final p in paths) {
       try {
-        final page = await importIncoming(store, p);
+        NotePage? page;
+        if (p.startsWith('page:')) {
+          page = store.pages[p.substring(5)];
+        } else if (p == 'action:new' || p == 'action:call') {
+          page = await createQuickNote(store, call: p == 'action:call');
+        } else {
+          page = await importIncoming(store, p);
+        }
         if (page != null) {
           // ilk kare çizilene kadar bekle
           await WidgetsBinding.instance.endOfFrame;

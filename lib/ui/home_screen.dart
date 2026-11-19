@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../canvas/element_painter.dart';
+import '../media/platform_extras.dart';
 import '../models/note_models.dart';
 import '../storage/local_store.dart';
 import '../templates/templates.dart';
@@ -24,6 +27,46 @@ class _HomeScreenState extends State<HomeScreen> {
   PageMode? lastMode;
 
   static const _nbColors = [0xFF37474F, 0xFF1565C0, 0xFF2E7D32, 0xFFEF6C00, 0xFFC62828, 0xFF6A1B9A];
+
+  Future<void> _settings() async {
+    var callNotes = await getCallNotes();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Ayarlar'),
+          content: SizedBox(
+            width: 460,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (Platform.isAndroid)
+                SwitchListTile(
+                  value: callNotes,
+                  title: const Text('Görüşme bitince not hatırlatması'),
+                  subtitle: const Text('Telefon görüşmesi bitince "Arama notu al" bildirimi gelir; dokununca tarihli bir arama notu açılır. Telefon durumu ve bildirim izni istenir.'),
+                  onChanged: (v) async {
+                    await setCallNotes(v);
+                    setD(() => callNotes = v);
+                  },
+                ),
+              if (Platform.isAndroid)
+                const ListTile(
+                  leading: Icon(Icons.widgets_outlined),
+                  title: Text('Ana ekran widget\'ı'),
+                  subtitle: Text('Ana ekrana uzun bas → Widget\'lar → Teknik Defter: Yeni not · Arama notu · Son sayfa'),
+                ),
+              const ListTile(
+                leading: Icon(Icons.event_outlined),
+                title: Text('Takvim'),
+                subtitle: Text('Sayfada sağ tık / uzun bas ya da ⋮ menü → Takvime ekle. Etkinlikte nota giden bağlantı bulunur.'),
+              ),
+            ]),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Kapat'))],
+        ),
+      ),
+    );
+  }
 
   /// Yeni defter ya da mevcut defteri düzenle (ad + renk)
   Future<void> _editNotebook(LocalStore store, [Notebook? existing]) async {
@@ -234,7 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ]),
-      actions: const [SyncButton(), SizedBox(width: 4), AccountButton(), SizedBox(width: 8)],
+      actions: [IconButton(tooltip: 'Ayarlar', onPressed: _settings, icon: const Icon(Icons.settings_outlined)), const SyncButton(), const SizedBox(width: 4), const AccountButton(), const SizedBox(width: 8)],
     );
     final fab = nb == null
         ? null

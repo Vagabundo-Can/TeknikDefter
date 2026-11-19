@@ -16,6 +16,7 @@ import '../templates/templates.dart';
 import 'context_menu.dart';
 import 'element_editors.dart';
 import 'insert_export.dart';
+import '../media/platform_extras.dart';
 import 'new_page_wizard.dart';
 import 'layout.dart';
 import 'pen_glyph.dart';
@@ -63,6 +64,7 @@ class _EditorScreenState extends State<EditorScreen> {
     });
     store.addListener(_onStore);
     _lastVersion = page.version;
+    rememberLastPage(page);
   }
 
   void _onStore() {
@@ -274,9 +276,24 @@ class _EditorScreenState extends State<EditorScreen> {
         menuDivider,
         MenuAction('Seç aracı', Icons.near_me_outlined, () => ctrl.setTool(ToolKind.select), shortcut: 'V'),
         MenuAction('Sunum modu', Icons.slideshow_outlined, _present),
+        MenuAction('Takvime ekle…', Icons.event_outlined, _addToCalendar),
       ];
     }
     showContextMenuAt(context, global, actions);
+  }
+
+  Future<void> _addToCalendar() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(context: context, initialDate: now, firstDate: now.subtract(const Duration(days: 365)), lastDate: now.add(const Duration(days: 3650)));
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))));
+    if (time == null || !mounted) return;
+    final start = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    try {
+      await addToCalendar(ctrl.page, ctrl.page.title, start, const Duration(hours: 1), store.notebooks[ctrl.page.notebookId]?.title ?? '');
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Takvime eklenemedi: $e')));
+    }
   }
 
   void _present() {
@@ -436,7 +453,7 @@ class _EditorScreenState extends State<EditorScreen> {
             IconButton(tooltip: 'Dışa aktar / Paylaş', onPressed: () => showExportDialog(context, ctrl), icon: const Icon(Icons.ios_share)),
             if (ff != FormFactor.phone) IconButton(tooltip: 'Sunum modu', onPressed: _present, icon: const Icon(Icons.slideshow_outlined)),
             if (ff != FormFactor.phone) const SyncButton(),
-            PageMenu(ctrl: ctrl),
+            PageMenu(ctrl: ctrl, onCalendar: _addToCalendar, onPresent: _present),
           ],
         );
         final siblings = store.pagesOf(page.notebookId);
@@ -746,7 +763,9 @@ class _SelectionBar extends StatelessWidget {
 
 class PageMenu extends StatelessWidget {
   final EditorController ctrl;
-  const PageMenu({super.key, required this.ctrl});
+  final VoidCallback onCalendar;
+  final VoidCallback onPresent;
+  const PageMenu({super.key, required this.ctrl, required this.onCalendar, required this.onPresent});
 
   static const engScales = [ScaleSpec.free, ScaleSpec(5, 1), ScaleSpec(2, 1), ScaleSpec(1, 1), ScaleSpec(1, 2), ScaleSpec(1, 5), ScaleSpec(1, 10), ScaleSpec(1, 20)];
   static const motoScales = [ScaleSpec(1, 100, 'm'), ScaleSpec(1, 200, 'm'), ScaleSpec(1, 500, 'm'), ScaleSpec(1, 1000, 'm')];
@@ -773,6 +792,9 @@ class PageMenu extends StatelessWidget {
             child: const Text('Tek parmakla kaydır')),
         CheckedPopupMenuItem(
             value: () => ctrl.update(() => ctrl.canvasLocked = !ctrl.canvasLocked), checked: ctrl.canvasLocked, child: const Text('Sayfayı kilitle')),
+        const PopupMenuDivider(),
+        PopupMenuItem(value: onCalendar, child: const ListTile(dense: true, leading: Icon(Icons.event_outlined), title: Text('Takvime ekle…'))),
+        PopupMenuItem(value: onPresent, child: const ListTile(dense: true, leading: Icon(Icons.slideshow_outlined), title: Text('Sunum modu'))),
       ],
     );
   }

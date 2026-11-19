@@ -1,7 +1,11 @@
 package com.vagabundo.teknik_defter
 
+import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.CalendarContract
 import android.os.Build
 import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
@@ -23,6 +27,35 @@ class MainActivity : FlutterActivity() {
                     result.success(pending)
                     pending = emptyList()
                 }
+                "addCalendarEvent" -> {
+                    val i = Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
+                        .putExtra(CalendarContract.Events.TITLE, call.argument<String>("title"))
+                        .putExtra(CalendarContract.Events.DESCRIPTION, call.argument<String>("description"))
+                        .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, call.argument<Number>("begin")!!.toLong())
+                        .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, call.argument<Number>("end")!!.toLong())
+                    try {
+                        startActivity(i)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("calendar", e.message, null)
+                    }
+                }
+                "setCallNotes" -> {
+                    val on = call.argument<Boolean>("enabled") == true
+                    getSharedPreferences("teknik_defter", Context.MODE_PRIVATE).edit().putBoolean("call_notes", on).apply()
+                    if (on) {
+                        val perms = mutableListOf(Manifest.permission.READ_PHONE_STATE)
+                        if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                        val missing = perms.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+                        if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 42)
+                    }
+                    result.success(true)
+                }
+                "getCallNotes" -> result.success(getSharedPreferences("teknik_defter", Context.MODE_PRIVATE).getBoolean("call_notes", false))
+                "refreshWidget" -> {
+                    QuickWidget.refresh(this)
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -37,6 +70,17 @@ class MainActivity : FlutterActivity() {
 
     private fun filesFrom(intent: Intent?): List<String> {
         if (intent == null) return emptyList()
+        // uygulama içi bağlantılar ve kısayollar
+        intent.data?.let { d ->
+            if (d.scheme == "teknikdefter") {
+                return when (d.host) {
+                    "page" -> listOf("page:" + (d.lastPathSegment ?: ""))
+                    "new" -> listOf("action:new")
+                    "call" -> listOf("action:call")
+                    else -> emptyList()
+                }
+            }
+        }
         val uris = mutableListOf<Uri>()
         when (intent.action) {
             Intent.ACTION_VIEW -> intent.data?.let { uris.add(it) }

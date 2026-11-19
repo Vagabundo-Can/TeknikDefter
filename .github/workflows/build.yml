@@ -89,6 +89,7 @@ jobs:
           flutter create --platforms=android,windows --org com.vagabundo --project-name teknik_defter .
           rm -f test/widget_test.dart
           sed -i 's/L"teknik_defter"/L"Teknik Defter"/' windows/runner/main.cpp
+          python tool/patch_windows.py
       - run: flutter pub get
       - name: Uygulama simgesi
         run: dart run flutter_launcher_icons
