@@ -113,6 +113,7 @@ const _mm = 25.4 / 72; // pt → mm
 
 /// PDF'nin her sayfasını not sayfasına çevirir (arka plan görseli kilitli). Dönüş: oluşan sayfalar.
 Future<List<NotePage>> importPdf(LocalStore store, String path, String notebookId, {double? afterOrder, void Function(int done, int total)? progress}) async {
+  await pdfrxFlutterInitialize();
   final doc = await PdfDocument.openFile(path);
   final out = <NotePage>[];
   final base = File(path).uri.pathSegments.last.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
@@ -124,7 +125,7 @@ Future<List<NotePage>> importPdf(LocalStore store, String path, String notebookI
       final wMm = pg.width * _mm, hMm = pg.height * _mm;
       const scale = 200 / 72; // 200 dpi
       final w = (pg.width * scale).round(), h = (pg.height * scale).round();
-      final rendered = await pg.render(fullWidth: w.toDouble(), fullHeight: h.toDouble(), width: w, height: h, backgroundColor: Colors.white);
+      final rendered = await pg.render(fullWidth: w.toDouble(), fullHeight: h.toDouble(), width: w, height: h, backgroundColor: 0xFFFFFFFF);
       if (rendered == null) continue;
       final img = await rendered.createImage();
       final bytes = await _png(img);
