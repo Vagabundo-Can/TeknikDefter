@@ -1,0 +1,32 @@
+name: teknik_defter
+description: "Teknik Defter — mühendislik ve motosiklet eğitimi için kalem odaklı not uygulaması (Vagabundo Apps)."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.2
+  path_provider: ^2.1.4
+  shared_preferences: ^2.3.2
+  uuid: ^4.4.0
+  http: ^1.2.1
+  url_launcher: ^6.3.0
+  # Google hesabı + Drive senkron
+  google_sign_in: ^6.2.1            # Android
+  extension_google_sign_in_as_googleapis_auth: ^2.0.12
+  googleapis_auth: ^1.6.0           # Windows (loopback OAuth)
+  googleapis: ">=12.0.0 <16.0.0"    # Drive v3
+  # El yazısı tanıma (Android, cihaz üstü)
+  google_mlkit_digital_ink_recognition: ">=0.11.0 <1.0.0"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
