@@ -35,7 +35,7 @@ Future<void> addToCalendar(NotePage page, String title, DateTime start, Duration
     return '${u.year}${_two(u.month)}${_two(u.day)}T${_two(u.hour)}${_two(u.minute)}${_two(u.second)}Z';
   }
 
-  String esc(String s) => s.replaceAll('\\', '\\\\').replaceAll(',', '\\,').replaceAll(';', '\;').replaceAll('\n', '\\n');
+  String esc(String s) => s.replaceAll('\\', '\\\\').replaceAll(',', '\\,').replaceAll(';', '\\;').replaceAll('\n', '\\n');
   final ics = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',

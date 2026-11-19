@@ -63,7 +63,8 @@ class IncomingFiles {
         if (page != null) {
           // ilk kare çizilene kadar bekle
           await WidgetsBinding.instance.endOfFrame;
-          navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => EditorScreen(pageId: page.id)));
+          final id = page.id;
+          navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => EditorScreen(pageId: id)));
         }
       } catch (e) {
         debugPrint('Gelen dosya açılamadı $p: $e');
