@@ -516,3 +516,104 @@ class _SymbolEditorState extends State<_SymbolEditor> {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Ölçü tuş takımı: ölçü konunca açılır; değer yaz → bağlı şekil boyutlanır, ya da ölçülen değerle devam et.
+
+Future<String?> showDimNumpad(BuildContext context, DimensionElement d, ScaleSpec scale) {
+  final measured = d.kind == DimKind.angle ? d.paperValue : (scale.isFree ? null : scale.realFromPaper(d.paperValue));
+  return showDialog<String>(context: context, builder: (_) => _Numpad(dim: d, measured: measured, scale: scale));
+}
+
+class _Numpad extends StatefulWidget {
+  final DimensionElement dim;
+  final double? measured;
+  final ScaleSpec scale;
+  const _Numpad({required this.dim, required this.measured, required this.scale});
+  @override
+  State<_Numpad> createState() => _NumpadState();
+}
+
+class _NumpadState extends State<_Numpad> {
+  late final TextEditingController c = TextEditingController(text: widget.measured == null ? '' : fmt(widget.measured!, 2));
+  bool fresh = true; // ilk tuş eski değeri siler
+
+  void _key(String k) {
+    setState(() {
+      var t = fresh ? '' : c.text;
+      fresh = false;
+      switch (k) {
+        case '⌫':
+          if (t.isNotEmpty) t = t.substring(0, t.length - 1);
+        case 'C':
+          t = '';
+        case ',':
+          if (!t.contains(',')) t = t.isEmpty ? '0,' : '$t,';
+        default:
+          t += k;
+      }
+      c.text = t;
+      c.selection = TextSelection.collapsed(offset: t.length);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = widget.dim;
+    final unit = d.kind == DimKind.angle ? '°' : unitOf(widget.scale);
+    final prefix = switch (d.kind) { DimKind.radius => 'R', DimKind.diameter => 'Ø', _ => '' };
+    Widget key(String k, {Color? color, int flex = 1}) => Expanded(
+          flex: flex,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: SizedBox(
+              height: 52,
+              child: FilledButton.tonal(
+                style: FilledButton.styleFrom(backgroundColor: color, padding: EdgeInsets.zero),
+                onPressed: () => _key(k),
+                child: Text(k, style: const TextStyle(fontSize: 22)),
+              ),
+            ),
+          ),
+        );
+    final keyboard = Theme.of(context).platform == TargetPlatform.windows;
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      title: Text('${d.kind.label} ölçüsü'),
+      content: SizedBox(
+        width: 300,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: c,
+            autofocus: keyboard,
+            readOnly: !keyboard,
+            showCursor: true,
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              prefixText: prefix,
+              suffixText: unit,
+              border: const OutlineInputBorder(),
+              helperText: widget.measured == null ? 'Ölçeksiz: değeri yaz' : 'Çizimden ölçülen: $prefix${fmt(widget.measured!, 2)} $unit',
+            ),
+            onTap: () => fresh = false,
+            onSubmitted: (v) => Navigator.pop(context, v),
+          ),
+          const SizedBox(height: 8),
+          for (final row in const [
+            ['7', '8', '9'],
+            ['4', '5', '6'],
+            ['1', '2', '3'],
+          ])
+            Row(children: [for (final k in row) key(k)]),
+          Row(children: [key(','), key('0'), key('⌫')]),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(widget.measured == null ? 'Boş bırak' : 'Ölçülenle devam')),
+        FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('Uygula')),
+      ],
+    );
+  }
+}

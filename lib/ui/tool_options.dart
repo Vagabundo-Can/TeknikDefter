@@ -65,7 +65,7 @@ Widget _chips<T>(List<T> values, T selected, String Function(T) label, ValueChan
 Widget _toggle(String label, bool value, ValueChanged<bool> onChanged) =>
     FilterChip(label: Text(label), selected: value, onSelected: onChanged, visualDensity: VisualDensity.compact);
 
-Widget _miniField(String label, String value, ValueChanged<String> onChanged, {double width = 70}) => SizedBox(
+Widget _miniField(String label, String value, ValueChanged<String> onChanged, {double width = 96}) => SizedBox(
       width: width,
       child: TextFormField(
         key: ValueKey('field-$label'),
@@ -155,6 +155,7 @@ List<Widget> buildToolOptions(BuildContext context, EditorController c) {
       return [
         _chips(DimKind.values, c.dimKind, (k) => k.label, (k) => c.update(() => c.dimKind = k)),
         _chips([2.5, 3.5], c.dimTextHeight, (h) => 'h ${formatNumber(h)}', (h) => c.update(() => c.dimTextHeight = h)),
+        _toggle('Koyunca tuş takımı', c.dimNumpad, (v) => c.update(() => c.dimNumpad = v)),
         _miniField('Üst sapma', t.upper == null ? '' : formatNumber(t.upper!, maxDecimals: 3),
             (s) => c.nextTolerance = DimTolerance(upper: _parse(s), lower: c.nextTolerance.lower, fit: c.nextTolerance.fit)),
         _miniField('Alt sapma', t.lower == null ? '' : formatNumber(t.lower!, maxDecimals: 3),

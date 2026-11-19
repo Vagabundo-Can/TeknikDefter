@@ -59,6 +59,7 @@ class EditorController extends ChangeNotifier {
   bool canvasLocked = false; // kaydırma/zoom tamamen kapalı
   bool fingerScroll = false; // "yalnızca kalem" açıkken tek parmakla kaydır
   bool parametric = false; // şekil: dokun → ölçüleri yazarak çiz
+  bool dimNumpad = true; // ölçü konunca tuş takımı aç
 
   // --- Metin varsayılanları (yeni metinler bunlarla açılır)
   TextElement textDefaults = const TextElement(id: '_', updatedAt: 0, z: 0, pos: Offset.zero, text: '', size: 4);
@@ -645,4 +646,48 @@ class EditorController extends ChangeNotifier {
     if (v.isEmpty) return Rect.fromLTWH(0, 0, page.widthMm, page.heightMm);
     return v.map((e) => e.bounds).reduce((a, b) => a.expandToInclude(b));
   }
+
+  // --- Pano (kopyala / kes / yapıştır)
+  static List<Map<String, dynamic>> clipboard = [];
+
+  void copySelection() {
+    clipboard = [for (final e in selected) e.toJson()];
+    notifyListeners();
+  }
+
+  void cutSelection() {
+    copySelection();
+    deleteSelection();
+  }
+
+  /// [at] verilirse yapıştırılan grubun sol üstü oraya gelir
+  void paste({Offset? at}) {
+    if (clipboard.isEmpty) return;
+    final els = [for (final j in clipboard) NoteElement.fromJson(Map.of(j))];
+    final b = els.map((e) => e.bounds).reduce((a, c) => a.expandToInclude(c));
+    final d = at == null ? const Offset(6, 6) : at - b.topLeft;
+    final out = <NoteElement>[];
+    for (final e in els) {
+      final j = e.translated(d).toJson()
+        ..['id'] = newId()
+        ..['z'] = newZ();
+      out.add(NoteElement.fromJson(j));
+    }
+    commit(out);
+    selection
+      ..clear()
+      ..addAll(out.map((e) => e.id));
+    tool = ToolKind.select;
+    notifyListeners();
+  }
+
+  void selectAll() {
+    selection
+      ..clear()
+      ..addAll(page.visible.where((e) => !(e is ImageElement && e.locked)).map((e) => e.id));
+    tool = ToolKind.select;
+    notifyListeners();
+  }
+
+  void toggleImageLock(ImageElement i) => replace(i.copyWith(locked: !i.locked));
 }

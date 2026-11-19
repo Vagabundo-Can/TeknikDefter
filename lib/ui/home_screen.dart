@@ -5,6 +5,7 @@ import '../canvas/element_painter.dart';
 import '../models/note_models.dart';
 import '../storage/local_store.dart';
 import '../templates/templates.dart';
+import 'context_menu.dart';
 import 'editor_screen.dart';
 import 'layout.dart';
 import 'new_page_wizard.dart';
@@ -24,16 +25,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const _nbColors = [0xFF37474F, 0xFF1565C0, 0xFF2E7D32, 0xFFEF6C00, 0xFFC62828, 0xFF6A1B9A];
 
-  Future<void> _newNotebook(LocalStore store) async {
-    final ctrl = TextEditingController();
-    var color = _nbColors[1];
+  /// Yeni defter ya da mevcut defteri düzenle (ad + renk)
+  Future<void> _editNotebook(LocalStore store, [Notebook? existing]) async {
+    final ctrl = TextEditingController(text: existing?.title ?? '');
+    var color = existing?.color ?? _nbColors[1];
     final title = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: const Text('Yeni defter'),
+          title: Text(existing == null ? 'Yeni defter' : 'Defteri düzenle'),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: ctrl, autofocus: true, decoration: const InputDecoration(labelText: 'Ad')),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Ad'),
+              onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+            ),
             const SizedBox(height: 12),
             Wrap(spacing: 8, children: [
               for (final c in _nbColors)
@@ -46,15 +53,90 @@ class _HomeScreenState extends State<HomeScreen> {
           ]),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Vazgeç')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Oluştur')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: Text(existing == null ? 'Oluştur' : 'Kaydet')),
           ],
         ),
       ),
     );
-    if (title != null && title.isNotEmpty) {
+    if (title == null || title.isEmpty) return;
+    if (existing == null) {
       final nb = store.createNotebook(title, color);
       setState(() => notebookId = nb.id);
+    } else {
+      existing
+        ..title = title
+        ..color = color;
+      store.updateNotebook(existing);
     }
+  }
+
+  Future<void> _deleteNotebook(LocalStore store, Notebook nb) async {
+    final n = store.pagesOf(nb.id).length;
+    final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+              title: Text('"${nb.title}" silinsin mi?'),
+              content: Text(n == 0 ? 'Defter boş.' : 'İçindeki $n sayfa da tüm cihazlardan silinir.'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Vazgeç')),
+                FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sil')),
+              ],
+            ));
+    if (ok != true) return;
+    for (final p in store.pagesOf(nb.id)) {
+      store.deletePage(p);
+    }
+    nb.deleted = true;
+    store.updateNotebook(nb);
+  }
+
+  Future<void> _renamePage(LocalStore store, NotePage p) async {
+    final c = TextEditingController(text: p.title);
+    final t = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+              title: const Text('Sayfa adı'),
+              content: TextField(controller: c, autofocus: true, onSubmitted: (v) => Navigator.pop(ctx, v)),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Vazgeç')),
+                FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('Kaydet')),
+              ],
+            ));
+    if (t == null || t.trim().isEmpty) return;
+    p.title = t.trim();
+    p.touchMeta();
+    await store.savePageNow(p);
+    store.notifyExternalChange();
+  }
+
+  Future<void> _movePage(LocalStore store, NotePage p) async {
+    final target = await showDialog<Notebook>(
+        context: context,
+        builder: (ctx) => SimpleDialog(title: const Text('Hangi deftere?'), children: [
+              for (final n in store.activeNotebooks.where((n) => n.id != p.notebookId))
+                SimpleDialogOption(
+                    onPressed: () => Navigator.pop(ctx, n),
+                    child: Row(children: [Icon(Icons.book, color: Color(n.color)), const SizedBox(width: 10), Text(n.title)])),
+            ]));
+    if (target == null) return;
+    final sib = store.pagesOf(target.id);
+    p.notebookId = target.id;
+    p.order = sib.isEmpty ? 0 : sib.last.order + 1;
+    p.touchMeta();
+    await store.savePageNow(p);
+    store.notifyExternalChange();
+  }
+
+  Future<void> _duplicatePage(LocalStore store, NotePage p) async {
+    final j = p.toJson();
+    j['id'] = newId();
+    j['ti'] = '${p.title} (kopya)';
+    j['or'] = p.order + 0.5;
+    j['mu'] = nowMs();
+    final copy = NotePage.fromJson(j)..dirty = true;
+    store.pages[copy.id] = copy;
+    await store.savePageNow(copy);
+    store.notifyExternalChange();
   }
 
   Future<void> _newPage(LocalStore store, String nbId) async {
@@ -83,7 +165,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final notebookList = ListView(children: [
       const SizedBox(height: 8),
       for (final n in nbs)
-        ListTile(
+        ContextMenuRegion(
+          actions: () => [
+            MenuAction('Yeniden adlandır / renk', Icons.edit_outlined, () => _editNotebook(store, n)),
+            MenuAction('Yeni sayfa', Icons.note_add_outlined, () => _newPage(store, n.id)),
+            menuDivider,
+            MenuAction('Defteri sil', Icons.delete_outline, () => _deleteNotebook(store, n), destructive: true),
+          ],
+          child: ListTile(
           leading: Icon(Icons.book, color: Color(n.color)),
           title: Text(n.title),
           trailing: Text('${store.pagesOf(n.id).length}'),
@@ -95,8 +184,8 @@ class _HomeScreenState extends State<HomeScreen> {
             });
             if (ff == FormFactor.phone) Navigator.of(context).maybePop();
           },
-        ),
-      ListTile(leading: const Icon(Icons.add), title: const Text('Yeni defter'), onTap: () => _newNotebook(store)),
+        )),
+      ListTile(leading: const Icon(Icons.add), title: const Text('Yeni defter'), onTap: () => _editNotebook(store)),
     ]);
 
     final body = Column(children: [
@@ -116,13 +205,35 @@ class _HomeScreenState extends State<HomeScreen> {
                 gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: ff == FormFactor.phone ? 180 : 220, mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 0.66),
                 itemCount: pages.length,
-                itemBuilder: (_, i) => _PageCard(page: pages[i], onOpen: () => _open(pages[i]), onDelete: () => store.deletePage(pages[i])),
+                itemBuilder: (_, i) => ContextMenuRegion(
+                  actions: () => [
+                    MenuAction('Aç', Icons.open_in_new, () => _open(pages[i])),
+                    MenuAction('Yeniden adlandır', Icons.edit_outlined, () => _renamePage(store, pages[i])),
+                    MenuAction('Çoğalt', Icons.copy, () => _duplicatePage(store, pages[i])),
+                    MenuAction('Başka deftere taşı', Icons.drive_file_move_outline, () => _movePage(store, pages[i])),
+                    menuDivider,
+                    MenuAction('Sil', Icons.delete_outline, () => store.deletePage(pages[i]), destructive: true),
+                  ],
+                  child: _PageCard(page: pages[i], onOpen: () => _open(pages[i])),
+                ),
               ),
       ),
     ]);
 
     final appBar = AppBar(
-      title: Row(children: [const AppLogo(size: 34), const SizedBox(width: 10), Flexible(child: Text(nb?.title ?? 'Teknik Defter', overflow: TextOverflow.ellipsis))]),
+      title: Row(children: [
+        const AppLogo(size: 34),
+        const SizedBox(width: 10),
+        Flexible(
+          child: InkWell(
+            onTap: nb == null ? null : () => _editNotebook(store, nb),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Flexible(child: Text(nb?.title ?? 'Teknik Defter', overflow: TextOverflow.ellipsis)),
+              if (nb != null) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.edit_outlined, size: 18)),
+            ]),
+          ),
+        ),
+      ]),
       actions: const [SyncButton(), SizedBox(width: 4), AccountButton(), SizedBox(width: 8)],
     );
     final fab = nb == null
@@ -146,27 +257,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _PageCard extends StatelessWidget {
   final NotePage page;
-  final VoidCallback onOpen, onDelete;
-  const _PageCard({required this.page, required this.onOpen, required this.onDelete});
+  final VoidCallback onOpen;
+  const _PageCard({required this.page, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     return InkWell(
       onTap: onOpen,
-      onLongPress: () async {
-        final ok = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-                  title: Text('"${page.title}" silinsin mi?'),
-                  content: const Text('Sayfa tüm cihazlardan kaldırılır.'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Vazgeç')),
-                    FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sil')),
-                  ],
-                ));
-        if (ok == true) onDelete();
-      },
       child: Column(children: [
         Expanded(child: Center(child: PageThumbnail(page: page))),
         const SizedBox(height: 6),

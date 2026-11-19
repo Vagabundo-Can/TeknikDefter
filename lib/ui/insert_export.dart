@@ -12,6 +12,7 @@ import '../canvas/editor_controller.dart';
 import '../canvas/element_painter.dart' show formatDuration;
 import '../media/audio.dart';
 import '../media/export_import.dart';
+import '../media/office_export.dart';
 import '../models/note_models.dart';
 import '../storage/local_store.dart';
 
@@ -130,9 +131,11 @@ class _RecordingDialogState extends State<_RecordingDialog> {
 
 // ---------------------------------------------------------------------------
 
+enum _Fmt { pdf, png, docx, pptx }
+
 Future<void> showExportDialog(BuildContext context, EditorController ctrl) async {
-  var allPages = false;
-  var asPng = false;
+  var allPages = true;
+  var fmt = _Fmt.pdf;
   var fit = ctrl.page.infinite ? PaperFit.a4 : PaperFit.original;
   final mobile = Platform.isAndroid || Platform.isIOS;
   final go = await showDialog<bool>(
@@ -146,16 +149,21 @@ Future<void> showExportDialog(BuildContext context, EditorController ctrl) async
             selected: {allPages},
             onSelectionChanged: (v) => setD(() {
               allPages = v.first;
-              if (allPages) asPng = false;
+              if (allPages && fmt == _Fmt.png) fmt = _Fmt.pdf;
             }),
           ),
           const SizedBox(height: 12),
-          SegmentedButton<bool>(
-            segments: [const ButtonSegment(value: false, label: Text('PDF')), ButtonSegment(value: true, label: const Text('PNG'), enabled: !allPages)],
-            selected: {asPng},
-            onSelectionChanged: (v) => setD(() => asPng = v.first),
+          SegmentedButton<_Fmt>(
+            segments: [
+              const ButtonSegment(value: _Fmt.pdf, label: Text('PDF'), icon: Icon(Icons.picture_as_pdf_outlined)),
+              ButtonSegment(value: _Fmt.png, label: const Text('PNG'), icon: const Icon(Icons.image_outlined), enabled: !allPages),
+              const ButtonSegment(value: _Fmt.docx, label: Text('Word'), icon: Icon(Icons.description_outlined)),
+              const ButtonSegment(value: _Fmt.pptx, label: Text('PowerPoint'), icon: Icon(Icons.slideshow_outlined)),
+            ],
+            selected: {fmt},
+            onSelectionChanged: (v) => setD(() => fmt = v.first),
           ),
-          if (!asPng) ...[
+          if (fmt == _Fmt.pdf) ...[
             const SizedBox(height: 12),
             const Text('Kağıt'),
             const SizedBox(height: 6),
@@ -168,12 +176,16 @@ Future<void> showExportDialog(BuildContext context, EditorController ctrl) async
               selected: {fit},
               onSelectionChanged: (v) => setD(() => fit = v.first),
             ),
-            if (ctrl.page.infinite)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text('Sonsuz tuval: tüm içerik seçilen kağıda sığdırılır (yön otomatik).', style: TextStyle(fontSize: 12)),
-              ),
           ],
+          const SizedBox(height: 8),
+          Text(
+            switch (fmt) {
+              _Fmt.docx => 'Her sayfa görsel olarak, sayfadaki metinler ve listeler düzenlenebilir paragraf olarak eklenir.',
+              _Fmt.pptx => 'Her sayfa bir slayt (A4 oranında).',
+              _ => ctrl.page.infinite ? 'Sonsuz tuval: tüm içerik seçilen kağıda sığdırılır.' : '',
+            },
+            style: const TextStyle(fontSize: 12),
+          ),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Vazgeç')),
@@ -193,7 +205,12 @@ Future<void> showExportDialog(BuildContext context, EditorController ctrl) async
     final store = ctrl.store;
     final pages = allPages ? store.pagesOf(ctrl.page.notebookId) : [ctrl.page];
     final title = allPages ? (store.notebooks[ctrl.page.notebookId]?.title ?? 'Defter') : ctrl.page.title;
-    final f = asPng ? await exportPng(ctrl.page) : await exportPdf(pages, title, fit: fit);
+    final f = switch (fmt) {
+      _Fmt.png => await exportPng(ctrl.page),
+      _Fmt.pdf => await exportPdf(pages, title, fit: fit),
+      _Fmt.docx => await exportDocx(pages, title),
+      _Fmt.pptx => await exportPptx(pages, title),
+    };
     messenger.hideCurrentSnackBar();
     final saved = await shareOrSave(f, title);
     if (saved != null) messenger.showSnackBar(SnackBar(content: Text('Kaydedildi: $saved')));

@@ -32,6 +32,8 @@ class NoteCanvas extends StatefulWidget {
   final ShapeParamsRequest onRequestShapeParams;
   final DimValueRequest onRequestDimValue;
   final void Function(AudioElement a)? onPlayAudio;
+  /// Sağ tık / uzun basma: ekran konumu, sayfa konumu (mm), altındaki eleman
+  final void Function(Offset global, Offset pageMm, NoteElement? hit)? onContextMenu;
   final bool darkPaper;
   const NoteCanvas({
     super.key,
@@ -41,6 +43,7 @@ class NoteCanvas extends StatefulWidget {
     required this.onRequestShapeParams,
     required this.onRequestDimValue,
     this.onPlayAudio,
+    this.onContextMenu,
     this.darkPaper = false,
   });
 
@@ -192,9 +195,38 @@ class NoteCanvasState extends State<NoteCanvas> {
   bool get _spaceDown => HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.space);
   bool get _shiftDown => HardwareKeyboard.instance.isShiftPressed;
 
+  Timer? _longPress;
+  Offset? _longPressAt;
+
+  void _armLongPress(PointerDownEvent e) {
+    _longPress?.cancel();
+    _longPressAt = e.position;
+    final local = e.localPosition;
+    _longPress = Timer(const Duration(milliseconds: 550), () {
+      if (_longPressAt == null) return;
+      HapticFeedback.mediumImpact();
+      _cancelDrawing();
+      _panPointer = null;
+      final p = toPage(local);
+      widget.onContextMenu?.call(_longPressAt!, p, c.hitTest(p, zoom));
+      _longPressAt = null;
+    });
+  }
+
+  void _disarmLongPress() {
+    _longPress?.cancel();
+    _longPressAt = null;
+  }
+
   bool _isPalm(PointerEvent e) => e.radiusMajor > 24 || (e.size > 0 && e.size > 0.35);
 
   void _onDown(PointerDownEvent e) {
+    // Sağ tık → bağlam menüsü
+    if (e.kind == PointerDeviceKind.mouse && e.buttons == kSecondaryMouseButton) {
+      final p = toPage(e.localPosition);
+      widget.onContextMenu?.call(e.position, p, c.hitTest(p, zoom));
+      return;
+    }
     if (_isTouch(e)) {
       // Avuç reddi: büyük temas, kalem yazarken ya da kalem yeni kalktıysa parmak yok sayılır
       final penBusy = (_drawPointer != null && _drawIsPen) || DateTime.now().difference(_lastPenUp) < const Duration(milliseconds: 400);
@@ -206,6 +238,7 @@ class NoteCanvasState extends State<NoteCanvas> {
       _touches[e.pointer] = e.localPosition;
       _touchStart[e.pointer] = e.localPosition;
       if (_touches.length == 2) {
+        _disarmLongPress();
         _cancelDrawing(); // ikinci parmak gelince parmak çizimi iptal → zoom
         if (!c.canvasLocked) _startPinch();
         _multiTouchStart = DateTime.now();
@@ -214,6 +247,9 @@ class NoteCanvasState extends State<NoteCanvas> {
         return;
       }
       if (_touches.length > 2) return;
+      // tek parmakla uzun basma: bağlam menüsü (parmak çizmiyorsa)
+      final fingerDraws = !c.stylusOnly && (c.tool == ToolKind.pen || c.tool == ToolKind.highlighter || c.tool == ToolKind.lane || c.tool == ToolKind.road || c.tool == ToolKind.route);
+      if (!fingerDraws) _armLongPress(e);
       if (navigate) {
         // "Yalnızca kalem": tek parmak varsayılan olarak kaydırmaz (avuç ekranı oynatmasın)
         if (!c.canvasLocked && (c.fingerScroll || !c.stylusOnly || c.tool == ToolKind.pan)) {
@@ -239,6 +275,7 @@ class NoteCanvasState extends State<NoteCanvas> {
 
   void _onMove(PointerMoveEvent e) {
     if (_ignored.contains(e.pointer)) return;
+    if (_longPressAt != null && (e.position - _longPressAt!).distance > 10) _disarmLongPress();
     if (_touches.containsKey(e.pointer)) {
       _touches[e.pointer] = e.localPosition;
       if ((e.localPosition - (_touchStart[e.pointer] ?? e.localPosition)).distance > 12) _multiMoved = true;
@@ -258,6 +295,7 @@ class NoteCanvasState extends State<NoteCanvas> {
   }
 
   void _onUp(PointerEvent e) {
+    _disarmLongPress();
     if (_ignored.remove(e.pointer)) return;
     final wasTouch = _touches.containsKey(e.pointer);
     if (wasTouch) {
@@ -766,10 +804,18 @@ class NoteCanvasState extends State<NoteCanvas> {
     );
     c.add(dim);
     _dimPts.clear();
-    if (c.page.scale.isFree && kind != DimKind.angle) {
+    if ((c.page.scale.isFree && kind != DimKind.angle) || c.dimNumpad) {
       widget.onRequestDimValue(dim).then((v) {
         final cur = c.page.elements[dim.id];
-        if (v != null && v.trim().isNotEmpty && cur is DimensionElement) c.replace(cur.copyWith(textOverride: v.trim()));
+        if (v == null || v.trim().isEmpty || cur is! DimensionElement) return;
+        if (c.page.scale.isFree) {
+          c.replace(cur.copyWith(textOverride: v.trim()));
+          return;
+        }
+        final n = double.tryParse(v.replaceAll(',', '.').replaceAll(RegExp(r'[^0-9.\-]'), ''));
+        if (n == null) return;
+        final measured = cur.kind == DimKind.angle ? cur.paperValue : c.page.scale.realFromPaper(cur.paperValue);
+        if ((n - measured).abs() > 1e-6) c.applyDimensionValue(cur, n);
       });
     }
   }

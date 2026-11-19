@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -11,11 +13,13 @@ import '../storage/local_store.dart';
 import '../sync/drive_sync.dart';
 import '../media/audio.dart';
 import '../templates/templates.dart';
+import 'context_menu.dart';
 import 'element_editors.dart';
 import 'insert_export.dart';
 import 'new_page_wizard.dart';
 import 'layout.dart';
 import 'pen_glyph.dart';
+import 'presentation.dart';
 import 'sync_button.dart';
 import 'tool_options.dart';
 
@@ -108,6 +112,14 @@ class _EditorScreenState extends State<EditorScreen> {
         _canvasKey.currentState?.fitPage();
       } else if (k == LogicalKeyboardKey.keyD) {
         ctrl.duplicateSelection();
+      } else if (k == LogicalKeyboardKey.keyC) {
+        ctrl.copySelection();
+      } else if (k == LogicalKeyboardKey.keyX) {
+        ctrl.cutSelection();
+      } else if (k == LogicalKeyboardKey.keyV) {
+        ctrl.paste(at: _viewCenter);
+      } else if (k == LogicalKeyboardKey.keyA) {
+        ctrl.selectAll();
       } else {
         return KeyEventResult.ignored;
       }
@@ -201,9 +213,77 @@ class _EditorScreenState extends State<EditorScreen> {
             switch (k) { ShapeKind.rect => 'Dikdörtgen', ShapeKind.ellipse => 'Daire', _ => 'Çizgi' },
             d,
             unitOf(ctrl.page.scale)),
-        onRequestDimValue: (d) => askDimensionText(context, d),
+        onRequestDimValue: (d) => showDimNumpad(context, d, ctrl.page.scale),
+        onContextMenu: _contextMenu,
         onPlayAudio: (a) => AudioService.instance.toggle(a.assetId, store.assetFile(a.assetId).path),
       );
+
+  void _contextMenu(Offset global, Offset p, NoteElement? hit) {
+    final inSelection = hit != null && ctrl.selection.contains(hit.id);
+    if (hit != null && !inSelection) ctrl.selectOnly(hit.id);
+    final hasSel = ctrl.selection.isNotEmpty && (hit != null);
+    final single = ctrl.singleSelected;
+    final List<MenuAction> actions;
+    if (hasSel) {
+      final strokes = ctrl.selected.any((e) => e is StrokeElement);
+      actions = [
+        if (single != null && single is! StrokeElement)
+          MenuAction('Düzenle…', Icons.tune, () => showElementEditor(context, ctrl, single)),
+        if (single is AudioElement)
+          MenuAction('Çal / durdur', Icons.play_arrow, () => AudioService.instance.toggle(single.assetId, store.assetFile(single.assetId).path)),
+        if (strokes) MenuAction('Metne çevir', Icons.text_fields, _convertToText),
+        if (strokes) MenuAction('Şekle oturt', Icons.auto_fix_high, () => ctrl.beautifySelection()),
+        menuDivider,
+        MenuAction('Kes', Icons.content_cut, ctrl.cutSelection, shortcut: 'Ctrl+X'),
+        MenuAction('Kopyala', Icons.content_copy, ctrl.copySelection, shortcut: 'Ctrl+C'),
+        MenuAction('Çoğalt', Icons.copy_all, ctrl.duplicateSelection, shortcut: 'Ctrl+D'),
+        menuDivider,
+        MenuAction('90° sağa döndür', Icons.rotate_right, () => ctrl.rotateSelection(math.pi / 2)),
+        MenuAction('90° sola döndür', Icons.rotate_left, () => ctrl.rotateSelection(-math.pi / 2)),
+        MenuAction('Öne getir', Icons.flip_to_front, () => ctrl.bringSelection(front: true)),
+        MenuAction('Arkaya gönder', Icons.flip_to_back, () => ctrl.bringSelection(front: false)),
+        if (single is ImageElement) MenuAction('Arka plan olarak kilitle', Icons.lock_outline, () => ctrl.toggleImageLock(single)),
+        menuDivider,
+        MenuAction('Sil', Icons.delete_outline, ctrl.deleteSelection, destructive: true, shortcut: 'Del'),
+      ];
+    } else {
+      ctrl.selectOnly(null);
+      final locked = ctrl.page.visible.whereType<ImageElement>().where((i) => i.locked).toList();
+      actions = [
+        MenuAction('Yapıştır', Icons.content_paste, EditorController.clipboard.isEmpty ? null : () => ctrl.paste(at: p), shortcut: 'Ctrl+V'),
+        MenuAction('Tümünü seç', Icons.select_all, ctrl.selectAll, shortcut: 'Ctrl+A'),
+        menuDivider,
+        MenuAction('Buraya metin', Icons.text_fields, () async {
+          final d = ctrl.textDefaults;
+          final t = await showTextEditor(
+              context,
+              TextElement(id: newId(), updatedAt: nowMs(), z: newZ(), pos: p, text: d.kind == TextKind.checklist ? '[ ] ' : '', size: d.size, color: d.color, kind: d.kind),
+              isNew: true);
+          if (t != null && t.text.replaceAll('[ ]', '').trim().isNotEmpty) ctrl.add(t);
+        }),
+        MenuAction('Görsel / kamera / ses / PDF ekle…', Icons.add_photo_alternate_outlined,
+            () => showInsertMenu(context, ctrl, p, openPage: _openPage)),
+        MenuAction('Sayfa ekle', Icons.note_add_outlined, () => _addPage()),
+        if (locked.isNotEmpty) menuDivider,
+        if (locked.isNotEmpty)
+          MenuAction('Arka plan kilidini aç', Icons.lock_open, () {
+            for (final i in locked) {
+              ctrl.toggleImageLock(i);
+            }
+          }),
+        menuDivider,
+        MenuAction('Seç aracı', Icons.near_me_outlined, () => ctrl.setTool(ToolKind.select), shortcut: 'V'),
+        MenuAction('Sunum modu', Icons.slideshow_outlined, _present),
+      ];
+    }
+    showContextMenuAt(context, global, actions);
+  }
+
+  void _present() {
+    final pages = store.pagesOf(ctrl.page.notebookId);
+    final i = pages.indexWhere((p) => p.id == ctrl.page.id);
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => PresentationScreen(pages: pages, initialIndex: i < 0 ? 0 : i)));
+  }
 
   void _openPage(NotePage p) {
     Navigator.of(context).pushReplacement(PageRouteBuilder(
@@ -329,6 +409,7 @@ class _EditorScreenState extends State<EditorScreen> {
               Text(page.title, overflow: TextOverflow.ellipsis),
               Text(
                 [
+                  store.notebooks[page.notebookId]?.title ?? '',
                   page.mode.label,
                   'Ölçek ${page.scale.label}',
                   if (page.mode != PageMode.engineering && ctrl.coneCount > 0) '${ctrl.coneCount} koni',
@@ -353,6 +434,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 onPressed: () => showInsertMenu(context, ctrl, _viewCenter, openPage: _openPage),
                 icon: const Icon(Icons.add_photo_alternate_outlined)),
             IconButton(tooltip: 'Dışa aktar / Paylaş', onPressed: () => showExportDialog(context, ctrl), icon: const Icon(Icons.ios_share)),
+            if (ff != FormFactor.phone) IconButton(tooltip: 'Sunum modu', onPressed: _present, icon: const Icon(Icons.slideshow_outlined)),
             if (ff != FormFactor.phone) const SyncButton(),
             PageMenu(ctrl: ctrl),
           ],
