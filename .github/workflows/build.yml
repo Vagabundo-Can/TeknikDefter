@@ -102,6 +102,10 @@ jobs:
           $id = [regex]::Match($all, '[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com').Value
           $sec = [regex]::Match($all, 'GOCSPX-[A-Za-z0-9_\-]+').Value
           Write-Host "Client ID bulundu: $([bool]$id) · Secret bulundu: $([bool]$sec)"
+          # Değer göstermeden biçim: harf→a, BÜYÜK→A, rakam→9
+          function Shape($v) { if (-not $v) { return "<boş>" }; ($v -creplace '[a-z]','a' -creplace '[A-Z]','A' -creplace '[0-9]','9') + " (uzunluk $($v.Length))" }
+          Write-Host "ID biçimi: $(Shape $env:RAW_ID)"
+          Write-Host "Secret biçimi: $(Shape $env:RAW_SECRET)"
           flutter build windows --release "--dart-define=GOOGLE_DESKTOP_CLIENT_ID=$id" "--dart-define=GOOGLE_DESKTOP_CLIENT_SECRET=$sec"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Paketle (taşınabilir zip + kurulum)
