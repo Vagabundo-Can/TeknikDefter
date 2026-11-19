@@ -9,5 +9,5 @@ sleep 25
 adb exec-out screencap -p > diag/ekran_1.png
 adb shell pidof com.vagabundo.teknik_defter > diag/pid.txt 2>&1
 adb logcat -d -v time > diag/logcat_full.txt
-grep -E "AndroidRuntime|FATAL|flutter|teknik_defter|E/" diag/logcat_full.txt | head -400 > diag/logcat_errors.txt
+grep -E "AndroidRuntime|FATAL|flutter|teknik_defter" diag/logcat_full.txt | head -400 > diag/logcat_errors.txt
 true
