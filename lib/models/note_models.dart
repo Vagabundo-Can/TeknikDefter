@@ -336,17 +336,17 @@ class ShapeElement extends NoteElement {
       );
 }
 
-class Tolerance {
+class DimTolerance {
   final double? upper; // +0.1
   final double? lower; // -0.05
   final String? fit; // H7, g6
-  const Tolerance({this.upper, this.lower, this.fit});
+  const DimTolerance({this.upper, this.lower, this.fit});
   bool get isEmpty => upper == null && lower == null && (fit == null || fit!.isEmpty);
   bool get symmetric => upper != null && lower != null && (upper! + lower!).abs() < 1e-9;
   Map<String, dynamic> toJson() => {if (upper != null) 'u': upper, if (lower != null) 'l': lower, if (fit != null) 'f': fit};
-  factory Tolerance.fromJson(Map<String, dynamic>? j) => j == null
-      ? const Tolerance()
-      : Tolerance(upper: (j['u'] as num?)?.toDouble(), lower: (j['l'] as num?)?.toDouble(), fit: j['f'] as String?);
+  factory DimTolerance.fromJson(Map<String, dynamic>? j) => j == null
+      ? const DimTolerance()
+      : DimTolerance(upper: (j['u'] as num?)?.toDouble(), lower: (j['l'] as num?)?.toDouble(), fit: j['f'] as String?);
 }
 
 class DimensionElement extends NoteElement {
@@ -356,7 +356,7 @@ class DimensionElement extends NoteElement {
   /// angle: [tepe, kol1, kol2, yay noktası]
   final List<Offset> points;
   final String? textOverride;
-  final Tolerance tolerance;
+  final DimTolerance tolerance;
   final double textHeight; // mm (2.5 / 3.5)
   final int color;
 
@@ -367,7 +367,7 @@ class DimensionElement extends NoteElement {
     required this.kind,
     required this.points,
     this.textOverride,
-    this.tolerance = const Tolerance(),
+    this.tolerance = const DimTolerance(),
     this.textHeight = 2.5,
     this.color = 0xFF0D47A1,
   });
@@ -380,7 +380,7 @@ class DimensionElement extends NoteElement {
   @override
   DimensionElement translated(Offset d) => copyWith(points: [for (final p in points) p + d]);
 
-  DimensionElement copyWith({List<Offset>? points, String? textOverride, bool clearOverride = false, Tolerance? tolerance, double? textHeight}) =>
+  DimensionElement copyWith({List<Offset>? points, String? textOverride, bool clearOverride = false, DimTolerance? tolerance, double? textHeight}) =>
       DimensionElement(
         id: id,
         updatedAt: nowMs(),
@@ -434,7 +434,7 @@ class DimensionElement extends NoteElement {
         kind: DimKind.values[j['k'] as int],
         points: [for (final p in j['p'] as List) _po(p)],
         textOverride: j['o'] as String?,
-        tolerance: Tolerance.fromJson(j['tol'] as Map<String, dynamic>?),
+        tolerance: DimTolerance.fromJson(j['tol'] as Map<String, dynamic>?),
         textHeight: (j['h'] as num?)?.toDouble() ?? 2.5,
         color: (j['c'] as int?) ?? 0xFF0D47A1,
       );

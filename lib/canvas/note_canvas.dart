@@ -78,10 +78,10 @@ class NoteCanvasState extends State<NoteCanvas> {
   }
 
   @override
-  void didUpdateWidget(NoteCanvas old) {
-    super.didUpdateWidget(old);
-    if (old.controller != c) {
-      old.controller.removeListener(_onController);
+  void didUpdateWidget(NoteCanvas oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != c) {
+      oldWidget.controller.removeListener(_onController);
       c.addListener(_onController);
       _fitted = false;
       _invalidate();
@@ -562,7 +562,7 @@ class NoteCanvasState extends State<NoteCanvas> {
       z: newZ(),
       kind: kind,
       points: List.of(_dimPts),
-      tolerance: c.tool == ToolKind.distance ? const Tolerance() : c.nextTolerance,
+      tolerance: c.tool == ToolKind.distance ? const DimTolerance() : c.nextTolerance,
       textHeight: c.tool == ToolKind.distance ? 3.0 : c.dimTextHeight,
       color: c.tool == ToolKind.distance ? 0xFF6A1B9A : 0xFF0D47A1,
     ));

@@ -142,10 +142,10 @@ List<Widget> buildToolOptions(BuildContext context, EditorController c) {
         _chips(DimKind.values, c.dimKind, (k) => k.label, (k) => c.update(() => c.dimKind = k)),
         _chips([2.5, 3.5], c.dimTextHeight, (h) => 'h ${formatNumber(h)}', (h) => c.update(() => c.dimTextHeight = h)),
         _miniField('Üst sapma', t.upper == null ? '' : formatNumber(t.upper!, maxDecimals: 3),
-            (s) => c.nextTolerance = Tolerance(upper: _parse(s), lower: c.nextTolerance.lower, fit: c.nextTolerance.fit)),
+            (s) => c.nextTolerance = DimTolerance(upper: _parse(s), lower: c.nextTolerance.lower, fit: c.nextTolerance.fit)),
         _miniField('Alt sapma', t.lower == null ? '' : formatNumber(t.lower!, maxDecimals: 3),
-            (s) => c.nextTolerance = Tolerance(upper: c.nextTolerance.upper, lower: _parse(s), fit: c.nextTolerance.fit)),
-        _miniField('Geçme', t.fit ?? '', (s) => c.nextTolerance = Tolerance(upper: c.nextTolerance.upper, lower: c.nextTolerance.lower, fit: s.trim().isEmpty ? null : s.trim())),
+            (s) => c.nextTolerance = DimTolerance(upper: c.nextTolerance.upper, lower: _parse(s), fit: c.nextTolerance.fit)),
+        _miniField('Geçme', t.fit ?? '', (s) => c.nextTolerance = DimTolerance(upper: c.nextTolerance.upper, lower: c.nextTolerance.lower, fit: s.trim().isEmpty ? null : s.trim())),
         Text(c.dimKind == DimKind.angle ? 'Tepe → kol 1 (sürükle) → kol 2 → yay' : 'Nokta 1 → nokta 2 (sürükle) → ölçü çizgisi yeri', style: Theme.of(context).textTheme.bodySmall),
       ];
     case ToolKind.distance:

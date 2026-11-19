@@ -31,7 +31,7 @@ void main() {
           z: 0,
           kind: DimKind.diameter,
           points: const [Offset(0, 0), Offset(6.25, 0), Offset(20, -10)],
-          tolerance: const Tolerance(upper: 0.05, lower: -0.05));
+          tolerance: const DimTolerance(upper: 0.05, lower: -0.05));
       expect(dimensionMainText(d, ScaleSpec.oneToOne), 'Ø12,5');
       expect(dimensionInlineSuffix(d), ' ±0,05');
     });
@@ -128,7 +128,7 @@ void main() {
       final p = NotePage(id: 'p', notebookId: 'n', title: 't', mode: PageMode.both, templateId: 'grid5');
       p.put(_stroke([const Offset(0, 0), const Offset(1, 1)]));
       p.put(ShapeElement(id: newId(), updatedAt: 1, z: 1, kind: ShapeKind.rect, points: const [Offset(0, 0), Offset(10, 5)], style: PenStyle.defaultFor(PenType.technical)));
-      p.put(DimensionElement(id: newId(), updatedAt: 1, z: 2, kind: DimKind.radius, points: const [Offset(0, 0), Offset(3, 0), Offset(9, -4)], tolerance: const Tolerance(fit: 'H7')));
+      p.put(DimensionElement(id: newId(), updatedAt: 1, z: 2, kind: DimKind.radius, points: const [Offset(0, 0), Offset(3, 0), Offset(9, -4)], tolerance: const DimTolerance(fit: 'H7')));
       p.put(TextElement(id: newId(), updatedAt: 1, z: 3, pos: const Offset(4, 4), text: 'Ölçü kontrol', fromInk: true));
       p.put(SymbolElement(id: newId(), updatedAt: 1, z: 4, kind: SymbolKind.gdtFrame, pos: const Offset(50, 50), params: const {'char': 'flatness', 'tol': '0,05'}));
       p.put(LaneElement(id: newId(), updatedAt: 1, z: 5, centerline: const [Offset(0, 0), Offset(50, 10)], widthPaper: 12.5, widthReal: 2.5));

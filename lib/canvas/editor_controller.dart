@@ -38,7 +38,7 @@ class EditorController extends ChangeNotifier {
   ShapeKind shapeKind = ShapeKind.line;
   DimKind dimKind = DimKind.aligned;
   double dimTextHeight = 2.5;
-  Tolerance nextTolerance = const Tolerance();
+  DimTolerance nextTolerance = const DimTolerance();
   bool ortho = false;
   bool gridSnap = true;
   bool objectSnap = true;

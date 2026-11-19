@@ -6,7 +6,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:http/http.dart' as http;
@@ -84,9 +83,9 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState s) {
-    if (s == AppLifecycleState.resumed) unawaited(syncAll());
-    if (s == AppLifecycleState.paused) unawaited(store.flush().then((_) => syncAll()));
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(syncAll());
+    if (state == AppLifecycleState.paused) unawaited(store.flush().then((_) => syncAll()));
   }
 
   /// Çizim durduktan 20 s sonra
