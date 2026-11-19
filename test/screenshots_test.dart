@@ -142,6 +142,18 @@ void main() {
     await editor('11_yol_viraj', ids.roadPage, ToolKind.route, const Rect.fromLTWH(0, 0, 210, 297));
     await editor('12_ogrenci_degerlendirme', ids.evalPage, ToolKind.pen, const Rect.fromLTWH(0, 0, 210, 297));
 
+    // --- Yeni arayüz: Mühendislik paneli, seçili ölçü, metin düzenleyici
+    await editor('19_panel_muhendislik', ids.bracketPage, ToolKind.dimension, const Rect.fromLTWH(15, 40, 180, 135));
+    await t.tap(find.text('Mühendislik').last);
+    await t.pump(const Duration(milliseconds: 300));
+    await shot(t, '19_panel_muhendislik', 1.5);
+    await editor('20_panel_motosiklet', ids.gymkhanaPage, ToolKind.cone, const Rect.fromLTWH(0, 0, 297, 210));
+    await t.tap(find.text('Motosiklet').last);
+    await t.pump(const Duration(milliseconds: 300));
+    await shot(t, '20_panel_motosiklet', 1.5);
+    await editor('21_secili_olcu', ids.bracketPage, ToolKind.select, const Rect.fromLTWH(15, 40, 180, 135), sel: {ids.diaDim});
+    await editor('22_metin_listeler', ids.bracketPage, ToolKind.text, const Rect.fromLTWH(10, 150, 190, 90));
+
     // --- Telefon
     await setSize(t, phone, 2.625, FormFactor.phone);
     await t.pumpWidget(const SizedBox());

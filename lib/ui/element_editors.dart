@@ -16,7 +16,7 @@ String fmt(double v, [int d = 3]) => formatNumber(v, maxDecimals: d);
 
 String unitOf(ScaleSpec s) => s.isFree ? '' : (s.unit == 'm' ? 'm' : 'mm');
 
-Widget _swatches(List<int?> colors, int? selected, ValueChanged<int?> onPick, {bool allowNone = false}) => Wrap(spacing: 6, runSpacing: 6, children: [
+Widget _swatches(List<int?> colors, int? selected, ValueChanged<int?> onPick) => Wrap(spacing: 6, runSpacing: 6, children: [
       for (final c in colors)
         InkResponse(
           onTap: () => onPick(c),
@@ -39,12 +39,6 @@ const bgColors = <int?>[null, 0xFFFFF59D, 0xFFC8E6C9, 0xFFBBDEFB, 0xFFFFCDD2, 0x
 
 // ---------------------------------------------------------------------------
 // Metin düzenleyici
-
-class _Line {
-  bool checked;
-  String text;
-  _Line(this.checked, this.text);
-}
 
 Future<TextElement?> showTextEditor(BuildContext context, TextElement t, {required bool isNew}) {
   return showDialog<TextElement>(context: context, builder: (_) => _TextEditor(initial: t, isNew: isNew));

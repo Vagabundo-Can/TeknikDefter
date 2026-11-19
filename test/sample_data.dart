@@ -72,6 +72,7 @@ class SampleIds {
   late String engNotebook, motoNotebook;
   late String bracketPage, gymkhanaPage, roadPage, evalPage, reviewPage, lessonPage;
   late Set<String> handwriting;
+  late String diaDim;
 }
 
 SampleIds seedSamples(LocalStore store) {
@@ -99,6 +100,10 @@ SampleIds seedSamples(LocalStore store) {
     _dim(DimKind.vertical, const [Offset(120, 60), Offset(120, 110), Offset(134, 85)]),
     _dim(DimKind.horizontal, const [Offset(60, 85), Offset(100, 85), Offset(80, 50)], tol: const DimTolerance(upper: 0.05, lower: -0.05)),
     _dim(DimKind.diameter, const [Offset(100, 85), Offset(108, 85), Offset(140, 62)], tol: const DimTolerance(fit: 'H7')),
+    TextElement(id: newId(), updatedAt: 1, z: _nz(), pos: const Offset(140, 190), size: 4, kind: TextKind.checklist, color: 0xFF263238,
+        text: '[x] Delik yerleri kontrol\n[ ] Pah ölçüsü\n[ ] Eloksal rengi onay'),
+    TextElement(id: newId(), updatedAt: 1, z: _nz(), pos: const Offset(140, 222), size: 3.5, kind: TextKind.box, background: 0xFFFFF59D, bold: true,
+        text: 'REV B: delik aralığı 40 ±0,05'),
     _sym(SymbolKind.gdtFrame, const Offset(80, 140), size: 6, params: {'char': 'position', 'tol': '0,1', 'dia': '1', 'mod': 'M', 'd1': 'A', 'd2': 'B', 'd3': ''}),
     _sym(SymbolKind.gdtFrame, const Offset(80, 150), size: 6, params: {'char': 'flatness', 'tol': '0,05', 'dia': '0', 'mod': ''}),
     _sym(SymbolKind.datum, const Offset(62, 110), size: 5, rot: math.pi, params: {'letter': 'A'}),
@@ -123,6 +128,7 @@ SampleIds seedSamples(LocalStore store) {
   ];
   els.addAll(hw);
   ids.handwriting = {for (final s in hw.skip(4)) s.id};
+  ids.diaDim = els.whereType<DimensionElement>().firstWhere((d) => d.kind == DimKind.diameter).id;
   for (final e in els) {
     b.put(e);
   }
