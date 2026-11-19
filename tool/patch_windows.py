@@ -19,7 +19,7 @@ cm = runner / 'CMakeLists.txt'
 c = cm.read_text(encoding='utf-8')
 if 'ink_recognizer.cpp' not in c:
     c = c.replace('"flutter_window.cpp"', '"flutter_window.cpp"\n  "ink_recognizer.cpp"', 1)
-    c += '\n# Handwriting recognition (C++/WinRT)\ntarget_link_libraries(${BINARY_NAME} PRIVATE windowsapp)\nset_source_files_properties(ink_recognizer.cpp PROPERTIES COMPILE_OPTIONS "/WX-;/W3;/EHsc;/utf-8")\n'
+    c += '\n# Handwriting recognition (C++/WinRT)\ntarget_link_libraries(${BINARY_NAME} PRIVATE windowsapp)\nset_source_files_properties(ink_recognizer.cpp PROPERTIES COMPILE_OPTIONS "/WX-;/W3;/EHsc;/utf-8;/std:c++20")\n'
     assert 'ink_recognizer.cpp' in c
     cm.write_text(c, encoding='utf-8')
 print('Windows runner patched')
