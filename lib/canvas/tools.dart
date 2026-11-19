@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/note_models.dart';
 
 enum ToolKind {
+  select,
   pen,
   highlighter,
   eraser,
@@ -34,6 +35,7 @@ class ToolInfo {
 }
 
 const toolInfos = <ToolKind, ToolInfo>{
+  ToolKind.select: ToolInfo(ToolKind.select, 'Seç / düzenle', Icons.near_me_outlined, 'V'),
   ToolKind.pen: ToolInfo(ToolKind.pen, 'Kalem', Icons.edit, 'P'),
   ToolKind.highlighter: ToolInfo(ToolKind.highlighter, 'Fosforlu', Icons.highlight, 'H'),
   ToolKind.eraser: ToolInfo(ToolKind.eraser, 'Silgi', Icons.auto_fix_normal, 'E'),
@@ -56,21 +58,18 @@ const toolInfos = <ToolKind, ToolInfo>{
   ToolKind.pan: ToolInfo(ToolKind.pan, 'Kaydır', Icons.pan_tool_outlined),
 };
 
-const _common = [ToolKind.pen, ToolKind.highlighter, ToolKind.eraser, ToolKind.lasso, ToolKind.text, ToolKind.shape];
-const _engineering = [ToolKind.dimension, ToolKind.gdt, ToolKind.datum, ToolKind.surface, ToolKind.weld];
-const _moto = [ToolKind.cone, ToolKind.lane, ToolKind.road, ToolKind.route, ToolKind.motorcycle, ToolKind.gate, ToolKind.distance, ToolKind.north];
+const commonTools = [ToolKind.select, ToolKind.pen, ToolKind.highlighter, ToolKind.eraser, ToolKind.lasso, ToolKind.text, ToolKind.shape];
+const engineeringTools = [ToolKind.dimension, ToolKind.gdt, ToolKind.datum, ToolKind.surface, ToolKind.weld];
+const motoTools = [ToolKind.cone, ToolKind.lane, ToolKind.road, ToolKind.route, ToolKind.motorcycle, ToolKind.gate, ToolKind.distance, ToolKind.north];
 
 List<ToolKind> toolsFor(PageMode mode) => switch (mode) {
-      PageMode.engineering => [..._common, ..._engineering],
-      PageMode.moto => [..._common, ..._moto],
-      PageMode.both => [..._common, ..._engineering, ..._moto],
+      PageMode.engineering => [...commonTools, ...engineeringTools],
+      PageMode.moto => [...commonTools, ...motoTools],
+      PageMode.both => [...commonTools, ...engineeringTools, ...motoTools],
     };
 
-/// Telefon alt çubuğunda doğrudan görünenler
-List<ToolKind> primaryToolsFor(PageMode mode) => switch (mode) {
-      PageMode.moto => [ToolKind.pen, ToolKind.eraser, ToolKind.cone, ToolKind.lane, ToolKind.lasso],
-      _ => [ToolKind.pen, ToolKind.eraser, ToolKind.shape, ToolKind.dimension, ToolKind.lasso],
-    };
+bool showsEngineering(PageMode m) => m != PageMode.moto;
+bool showsMoto(PageMode m) => m != PageMode.engineering;
 
 const penPalette = <int>[
   0xFF000000, 0xFF1A237E, 0xFF0D47A1, 0xFFC62828, 0xFF2E7D32, 0xFFEF6C00, 0xFF6A1B9A, 0xFF546E7A,

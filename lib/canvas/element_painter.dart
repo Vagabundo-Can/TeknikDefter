@@ -1,5 +1,6 @@
 // Eleman çizimi: şekiller, ölçüler, GD&T, yüzey/kaynak sembolleri, motosiklet sembolleri, şerit.
 
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'package:flutter/painting.dart';
 
@@ -695,11 +696,7 @@ void paintElement(Canvas c, NoteElement e, ScaleSpec scale) {
     case DimensionElement d:
       paintDimension(c, d, scale);
     case TextElement t:
-      final lines = t.text.split('\n');
-      for (var i = 0; i < lines.length; i++) {
-        drawText(c, lines[i], t.pos + Offset(0, i * t.size * 1.3),
-            size: t.size, color: Color(t.color), anchor: Alignment.topLeft);
-      }
+      paintText(c, t);
     case SymbolElement s:
       paintSymbol(c, s);
     case LaneElement l:
@@ -716,4 +713,76 @@ void paintSelection(Canvas c, Rect r, double zoom) {
     ..style = PaintingStyle.stroke
     ..strokeWidth = 1.2 / zoom;
   c.drawPath(dashPath(Path()..addRect(r.inflate(1.5)), [4 / zoom, 3 / zoom]), p);
+}
+
+// ---------------------------------------------------------------------------
+// Metin: font, kalın/italik/altı çizili, arka plan, kutu, onay listesi, madde işareti
+
+String? fontFamilyFor(FontKind f) => switch (f) {
+      FontKind.sans => 'Roboto',
+      FontKind.serif => Platform.isWindows ? 'Times New Roman' : 'serif',
+      FontKind.mono => Platform.isWindows ? 'Consolas' : 'monospace',
+    };
+
+TextStyle textStyleOf(TextElement t, {bool done = false}) => TextStyle(
+      fontFamily: fontFamilyFor(t.font),
+      fontSize: t.size,
+      height: 1.0,
+      color: Color(t.color).withValues(alpha: done ? 0.45 : 1),
+      fontWeight: t.bold ? FontWeight.w700 : FontWeight.w400,
+      fontStyle: t.italic ? FontStyle.italic : FontStyle.normal,
+      decoration: done ? TextDecoration.lineThrough : (t.underline ? TextDecoration.underline : TextDecoration.none),
+    );
+
+void paintText(Canvas c, TextElement t) {
+  final b = t.bounds;
+  if (t.background != null) {
+    c.drawRRect(RRect.fromRectAndRadius(b, Radius.circular(t.size * 0.25)), Paint()..color = Color(t.background!));
+  }
+  if (t.kind == TextKind.box) {
+    c.drawRRect(
+        RRect.fromRectAndRadius(b, Radius.circular(t.size * 0.25)),
+        Paint()
+          ..color = Color(t.color).withValues(alpha: 0.7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = math.max(0.2, t.size * 0.05));
+  }
+  final ls = t.lines;
+  for (var i = 0; i < ls.length; i++) {
+    var line = ls[i];
+    final y = t.pos.dy + i * t.lineHeight;
+    var done = false;
+    if (t.kind == TextKind.checklist) {
+      final box = t.checkboxRect(i);
+      final checked = line.startsWith('[x] ');
+      if (line.startsWith('[x] ') || line.startsWith('[ ] ')) line = line.substring(4);
+      done = checked;
+      final p = Paint()
+        ..color = Color(t.color)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(0.2, t.size * 0.07);
+      c.drawRRect(RRect.fromRectAndRadius(box, Radius.circular(t.size * 0.15)), p);
+      if (checked) {
+        c.drawRRect(RRect.fromRectAndRadius(box, Radius.circular(t.size * 0.15)), Paint()..color = Color(t.color));
+        final tick = Path()
+          ..moveTo(box.left + box.width * 0.22, box.top + box.height * 0.52)
+          ..lineTo(box.left + box.width * 0.42, box.top + box.height * 0.72)
+          ..lineTo(box.left + box.width * 0.8, box.top + box.height * 0.28);
+        c.drawPath(
+            tick,
+            Paint()
+              ..color = const Color(0xFFFFFFFF)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = t.size * 0.12
+              ..strokeCap = StrokeCap.round);
+      }
+    } else if (t.kind == TextKind.bullet && line.trim().isNotEmpty) {
+      c.drawCircle(Offset(t.pos.dx + t.size * 0.35, y + t.size * 0.55), t.size * 0.16, Paint()..color = Color(t.color));
+    }
+    final tp = TextPainter(
+      text: TextSpan(text: line, style: textStyleOf(t, done: done)),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: t.boxWidth != null ? math.max(1, t.boxWidth! - t.indent) : double.infinity);
+    tp.paint(c, Offset(t.pos.dx + t.indent, y));
+  }
 }

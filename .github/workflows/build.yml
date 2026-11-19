@@ -44,6 +44,8 @@ jobs:
           keytool -list -v -keystore ~/.android/debug.keystore -storepass android | grep SHA1
 
       - run: flutter pub get
+      - name: Uygulama simgesi
+        run: dart run flutter_launcher_icons
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
       - run: flutter build apk --release
@@ -91,6 +93,8 @@ jobs:
           rm -f test/widget_test.dart
           sed -i 's/L"teknik_defter"/L"Teknik Defter"/' windows/runner/main.cpp
       - run: flutter pub get
+      - name: Uygulama simgesi
+        run: dart run flutter_launcher_icons
       - name: Windows derle
         shell: pwsh
         env:

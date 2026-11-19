@@ -55,10 +55,18 @@ class EditorController extends ChangeNotifier {
   Map<String, String> surfaceParams = {'ra': '3,2', 'proc': 'remove'};
   Map<String, String> weldParams = {'wt': 'fillet', 'a': 'a4', 'around': '0', 'field': '0'};
 
+  // --- Tuval davranışı
+  bool canvasLocked = false; // kaydırma/zoom tamamen kapalı
+  bool fingerScroll = false; // "yalnızca kalem" açıkken tek parmakla kaydır
+  bool parametric = false; // şekil: dokun → ölçüleri yazarak çiz
+
+  // --- Metin varsayılanları (yeni metinler bunlarla açılır)
+  TextElement textDefaults = const TextElement(id: '_', updatedAt: 0, z: 0, pos: Offset.zero, text: '', size: 4);
+
   PenStyle get currentPen => tool == ToolKind.highlighter ? pens[PenType.highlighter]! : pens[penType]!;
 
   void setTool(ToolKind t) {
-    if (t != ToolKind.lasso) selection.clear();
+    if (t != ToolKind.lasso && t != ToolKind.select) selection.clear();
     tool = t;
     notifyListeners();
   }
@@ -403,4 +411,204 @@ class EditorController extends ChangeNotifier {
   }
 
   int get coneCount => page.visible.whereType<SymbolElement>().where((s) => s.kind == SymbolKind.cone).length;
+
+  // ---------------------------------------------------------------------------
+  // Tekil seçim ve düzenleme
+
+  /// Noktadaki en üstteki eleman
+  NoteElement? hitTest(Offset p, double zoom) {
+    final tol = 10 / zoom;
+    for (final e in page.visible.reversed) {
+      if (!e.bounds.inflate(tol).contains(p)) continue;
+      switch (e) {
+        case StrokeElement s:
+          for (var i = 0; i + 1 < s.points.length; i++) {
+            if (distToSegment(p, s.points[i].o, s.points[i + 1].o) <= tol + s.style.width / 2) return e;
+          }
+          if (s.points.length == 1 && (s.points.first.o - p).distance <= tol) return e;
+        case ShapeElement s when s.kind == ShapeKind.rect || s.kind == ShapeKind.ellipse:
+          final r = Rect.fromPoints(s.points[0], s.points[1]);
+          if (s.fill != null && r.contains(p)) return e;
+          if (s.kind == ShapeKind.rect) {
+            final edges = [r.topLeft, r.topRight, r.bottomRight, r.bottomLeft];
+            for (var i = 0; i < 4; i++) {
+              if (distToSegment(p, edges[i], edges[(i + 1) % 4]) <= tol) return e;
+            }
+          } else {
+            final rx = math.max(r.width / 2, 1e-6), ry = math.max(r.height / 2, 1e-6);
+            final q = p - r.center;
+            final k = math.sqrt(q.dx * q.dx / (rx * rx) + q.dy * q.dy / (ry * ry));
+            if ((k - 1).abs() * math.min(rx, ry) <= tol) return e;
+          }
+        case ShapeElement s:
+          for (var i = 0; i + 1 < s.points.length; i++) {
+            if (distToSegment(p, s.points[i], s.points[i + 1]) <= tol) return e;
+          }
+          if (s.kind == ShapeKind.triangle || s.kind == ShapeKind.polygon) {
+            if (distToSegment(p, s.points.last, s.points.first) <= tol) return e;
+          }
+        default:
+          return e; // ölçü, metin, sembol, şerit: kutu içi yeterli
+      }
+    }
+    return null;
+  }
+
+  void selectOnly(String? id) {
+    selection.clear();
+    if (id != null) selection.add(id);
+    notifyListeners();
+  }
+
+  NoteElement? get singleSelected => selection.length == 1 ? page.elements[selection.first] : null;
+
+  /// Aynı id'li elemanı değiştir (geri alınabilir)
+  void replace(NoteElement e) => commit([e]);
+
+  /// Ölçünün bağlı olduğu şekil (uçları şeklin yakalama noktalarına denk geliyorsa)
+  ShapeElement? linkedShape(DimensionElement d) {
+    const eps = 0.05;
+    bool near(Offset a, Offset b) => (a - b).distance < eps;
+    for (final s in page.visible.whereType<ShapeElement>()) {
+      if (d.kind == DimKind.radius || d.kind == DimKind.diameter) {
+        if (s.kind != ShapeKind.ellipse) continue;
+        if (near(Rect.fromPoints(s.points[0], s.points[1]).center, d.points[0])) return s;
+        continue;
+      }
+      if (d.kind == DimKind.angle) continue;
+      final sp = s.kind == ShapeKind.rect
+          ? () {
+              final r = Rect.fromPoints(s.points[0], s.points[1]);
+              return [r.topLeft, r.topRight, r.bottomLeft, r.bottomRight];
+            }()
+          : s.points;
+      if (sp.any((q) => near(q, d.points[0])) && sp.any((q) => near(q, d.points[1]))) return s;
+    }
+    return null;
+  }
+
+  /// Ölçüye gerçek değer ver: bağlı şekil varsa geometriyi sürer (parametrik), yoksa metni ezer.
+  /// Dönüş: şekil güncellendi mi
+  bool applyDimensionValue(DimensionElement d, double real) {
+    final scale = page.scale;
+    final shape = linkedShape(d);
+    if (shape == null || scale.isFree || real <= 0) {
+      replace(d.copyWith(textOverride: _fmt(real, d.kind)));
+      return false;
+    }
+    final paper = d.kind == DimKind.angle ? real : scale.paperFromReal(real);
+    final p1 = d.points[0], p2 = d.points[1];
+    ShapeElement newShape;
+    List<Offset> newDim;
+    if (shape.kind == ShapeKind.ellipse) {
+      final r = d.kind == DimKind.diameter ? paper / 2 : paper;
+      final c = p1;
+      final u = (p2 - c).distance < 1e-9 ? const Offset(1, 0) : (p2 - c) / (p2 - c).distance;
+      newShape = ShapeElement(id: shape.id, updatedAt: nowMs(), z: shape.z, kind: shape.kind, style: shape.style, fill: shape.fill,
+          points: [c - Offset(r, r), c + Offset(r, r)]);
+      newDim = [c, c + u * r, d.points[2]];
+    } else if (shape.kind == ShapeKind.rect) {
+      // sol/üst kenar sabit; sağ/alt kenar taşınır, o kenardaki ölçü ucu da onunla gider
+      final r = Rect.fromPoints(shape.points[0], shape.points[1]);
+      final horizontal = d.kind == DimKind.horizontal || (d.kind == DimKind.aligned && (p2.dy - p1.dy).abs() < (p2.dx - p1.dx).abs());
+      final Rect nr;
+      Offset mv(Offset q) => horizontal
+          ? ((q.dx - r.right).abs() < 0.05 ? Offset(r.left + paper, q.dy) : q)
+          : ((q.dy - r.bottom).abs() < 0.05 ? Offset(q.dx, r.top + paper) : q);
+      nr = horizontal ? Rect.fromLTRB(r.left, r.top, r.left + paper, r.bottom) : Rect.fromLTRB(r.left, r.top, r.right, r.top + paper);
+      newDim = [mv(p1), mv(p2), d.points[2]];
+      newShape = ShapeElement(id: shape.id, updatedAt: nowMs(), z: shape.z, kind: shape.kind, style: shape.style, fill: shape.fill,
+          points: [nr.topLeft, nr.bottomRight]);
+    } else {
+      // çizgi / ok / eksen: p1 sabit, p2 doğrultu boyunca
+      final idx2 = shape.points.indexWhere((q) => (q - p2).distance < 0.05);
+      Offset np2;
+      if (d.kind == DimKind.horizontal) {
+        np2 = Offset(p1.dx + paper * (p2.dx >= p1.dx ? 1 : -1), p2.dy);
+      } else if (d.kind == DimKind.vertical) {
+        np2 = Offset(p2.dx, p1.dy + paper * (p2.dy >= p1.dy ? 1 : -1));
+      } else {
+        final v = p2 - p1;
+        final u = v.distance < 1e-9 ? const Offset(1, 0) : v / v.distance;
+        np2 = p1 + u * paper;
+      }
+      final pts = List.of(shape.points);
+      if (idx2 >= 0) pts[idx2] = np2;
+      newShape = ShapeElement(id: shape.id, updatedAt: nowMs(), z: shape.z, kind: shape.kind, style: shape.style, fill: shape.fill, points: pts);
+      newDim = [p1, np2, d.points[2] + (np2 - p2)];
+    }
+    commit([newShape, d.copyWith(points: newDim, clearOverride: true)]);
+    return true;
+  }
+
+  String _fmt(double v, DimKind k) {
+    final n = v.toStringAsFixed(3).replaceFirst(RegExp(r'\.?0+$'), '').replaceAll('.', ',');
+    return switch (k) {
+      DimKind.radius => 'R$n',
+      DimKind.diameter => 'Ø$n',
+      DimKind.angle => '$n°',
+      _ => page.scale.unit == 'm' ? '$n m' : n,
+    };
+  }
+
+  /// Şeklin parametreleri (gerçek birim): line → L, A · rect → G, Y · ellipse → Ø (veya G, Y)
+  Map<String, double> shapeParams(ShapeElement s) {
+    final sc = page.scale;
+    double real(double paper) => sc.isFree ? paper : sc.realFromPaper(paper);
+    switch (s.kind) {
+      case ShapeKind.rect:
+        final r = Rect.fromPoints(s.points[0], s.points[1]);
+        return {'Genişlik': real(r.width), 'Yükseklik': real(r.height)};
+      case ShapeKind.ellipse:
+        final r = Rect.fromPoints(s.points[0], s.points[1]);
+        if ((r.width - r.height).abs() < 1e-6) return {'Çap Ø': real(r.width)};
+        return {'Genişlik': real(r.width), 'Yükseklik': real(r.height)};
+      default:
+        final v = s.points.last - s.points.first;
+        return {'Uzunluk': real(v.distance), 'Açı °': -math.atan2(v.dy, v.dx) * 180 / math.pi};
+    }
+  }
+
+  /// Parametrelerden şekil noktaları (başlangıç noktası sabit; açı CCW, ekran y aşağı)
+  List<Offset> pointsFromParams(ShapeKind k, Offset start, Map<String, double> v) {
+    final sc = page.scale;
+    double paper(double real) => sc.isFree ? real : sc.paperFromReal(real);
+    switch (k) {
+      case ShapeKind.rect:
+        return [start, start + Offset(paper(v['Genişlik'] ?? 10), paper(v['Yükseklik'] ?? 10))];
+      case ShapeKind.ellipse:
+        if (v.containsKey('Çap Ø')) {
+          final r = paper(v['Çap Ø']!) / 2;
+          return [start - Offset(r, r), start + Offset(r, r)];
+        }
+        final w = paper(v['Genişlik'] ?? 10), h = paper(v['Yükseklik'] ?? 10);
+        return [start - Offset(w / 2, h / 2), start + Offset(w / 2, h / 2)];
+      default:
+        final l = paper(v['Uzunluk'] ?? 10);
+        final a = -(v['Açı °'] ?? 0) * math.pi / 180;
+        return [start, start + Offset(math.cos(a), math.sin(a)) * l];
+    }
+  }
+
+  void applyShapeParams(ShapeElement s, Map<String, double> v) {
+    final start = s.kind == ShapeKind.ellipse
+        ? Rect.fromPoints(s.points[0], s.points[1]).center
+        : s.kind == ShapeKind.rect
+            ? Rect.fromPoints(s.points[0], s.points[1]).topLeft
+            : s.points.first;
+    replace(ShapeElement(
+        id: s.id, updatedAt: nowMs(), z: s.z, kind: s.kind, style: s.style, fill: s.fill, points: pointsFromParams(s.kind, start, v)));
+  }
+
+  /// Seçimi öne/arkaya al
+  void bringSelection({required bool front}) {
+    final zs = page.visible.map((e) => e.z);
+    final target = front ? zs.fold<double>(0, math.max) + 1 : zs.fold<double>(double.infinity, math.min) - 1;
+    final out = <NoteElement>[];
+    for (final e in selected) {
+      final j = e.toJson()..['z'] = target..['u'] = nowMs();
+      out.add(NoteElement.fromJson(j));
+    }
+    commit(out);
+  }
 }

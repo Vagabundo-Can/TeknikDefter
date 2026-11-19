@@ -6,6 +6,7 @@ import '../canvas/tools.dart';
 import '../core/format.dart';
 import '../models/note_models.dart';
 
+
 /// Tablet/Windows: araç çubuğunun altında yatay ayar şeridi
 class ToolOptionsBar extends StatelessWidget {
   final EditorController ctrl;
@@ -101,6 +102,7 @@ List<Widget> buildToolOptions(BuildContext context, EditorController c) {
         _chips([0, 1, 2, 3], c.smoothing, (v) => 'Yumuşatma $v', (v) => c.update(() => c.smoothing = v)),
         _toggle('Basılı tut → şekil', c.shapeHold, (v) => c.update(() => c.shapeHold = v)),
         _toggle('Yalnızca kalem', c.stylusOnly, (v) => c.update(() => c.stylusOnly = v)),
+        if (c.stylusOnly) _toggle('Tek parmakla kaydır', c.fingerScroll, (v) => c.update(() => c.fingerScroll = v)),
       ];
     case ToolKind.highlighter:
       final hl = c.pens[PenType.highlighter]!;
@@ -113,10 +115,21 @@ List<Widget> buildToolOptions(BuildContext context, EditorController c) {
         _chips(EraserMode.values, c.eraserMode, (m) => m == EraserMode.stroke ? 'Çizgi silgisi' : 'Kısmi silgi', (m) => c.update(() => c.eraserMode = m)),
         _chips([1.0, 2.0, 5.0], c.eraserRadius, (r) => '${formatNumber(r)} mm', (r) => c.update(() => c.eraserRadius = r)),
       ];
+    case ToolKind.select:
+      return [const Text('Dokun: seç · sürükle: taşı · çift dokun: düzenle (ölçü değeri, tolerans, GD&T, metin…). Ölçünün mavi tutamacını sürükle: ölçü çizgisini kaydır.')];
     case ToolKind.lasso:
-      return [const Text('Çevresini çiz → seç. Seçimi sürükle → taşı. Seçim çubuğunda: Metne çevir, Hizala, Şekle oturt.')];
+      return [const Text('Çevresini çiz → seç (dokunarak da seçilir). Seçimi sürükle → taşı. Seçim çubuğunda: Metne çevir, Hizala, Şekle oturt.')];
     case ToolKind.text:
-      return [const Text('Dokun → metin kutusu')];
+      final d = c.textDefaults;
+      return [
+        _chips(TextKind.values, d.kind,
+            (k) => switch (k) { TextKind.plain => 'Metin', TextKind.box => 'Metin kutusu', TextKind.checklist => 'Onay listesi', TextKind.bullet => 'Madde listesi' },
+            (k) => c.update(() => c.textDefaults = d.copyWith(kind: k))),
+        _chips([3.0, 4.0, 5.0, 6.0, 8.0], d.size, (v) => '${(v * 2.835).round()} pt', (v) => c.update(() => c.textDefaults = d.copyWith(size: v))),
+        _toggle('Kalın', d.bold, (v) => c.update(() => c.textDefaults = d.copyWith(bold: v))),
+        _colorDots(penPalette, d.color, (v) => c.update(() => c.textDefaults = d.copyWith(color: v))),
+        Text('Boş yere dokun → yeni metin · metne dokun → düzenle', style: Theme.of(context).textTheme.bodySmall),
+      ];
     case ToolKind.shape:
       final tech = c.pens[PenType.technical]!;
       return [
@@ -132,6 +145,7 @@ List<Widget> buildToolOptions(BuildContext context, EditorController c) {
             (k) => c.update(() => c.shapeKind = k)),
         _chips(isoLineWidths, tech.width, (w) => formatNumber(w), (w) => c.updatePen(PenType.technical, tech.copyWith(width: w))),
         _chips(LineType.values, tech.lineType, (l) => l.label, (l) => c.updatePen(PenType.technical, tech.copyWith(lineType: l))),
+        _toggle('Parametrik (dokun → ölçü yaz)', c.parametric, (v) => c.update(() => c.parametric = v)),
         _toggle('Ortho 15° (Shift)', c.ortho, (v) => c.update(() => c.ortho = v)),
         _toggle('Izgara', c.gridSnap, (v) => c.update(() => c.gridSnap = v)),
         _toggle('Nesne yakala', c.objectSnap, (v) => c.update(() => c.objectSnap = v)),

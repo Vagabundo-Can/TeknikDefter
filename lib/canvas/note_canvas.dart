@@ -19,13 +19,27 @@ import 'editor_controller.dart';
 import 'element_painter.dart';
 import 'tools.dart';
 
-typedef TextRequest = Future<String?> Function(String initial);
+typedef TextRequest = Future<TextElement?> Function(TextElement initial, bool isNew);
+typedef ElementEdit = Future<void> Function(NoteElement e);
+typedef ShapeParamsRequest = Future<Map<String, double>?> Function(ShapeKind kind, Map<String, double> defaults);
+typedef DimValueRequest = Future<String?> Function(DimensionElement d);
 
 class NoteCanvas extends StatefulWidget {
   final EditorController controller;
   final TextRequest onRequestText;
+  final ElementEdit onEditElement;
+  final ShapeParamsRequest onRequestShapeParams;
+  final DimValueRequest onRequestDimValue;
   final bool darkPaper;
-  const NoteCanvas({super.key, required this.controller, required this.onRequestText, this.darkPaper = false});
+  const NoteCanvas({
+    super.key,
+    required this.controller,
+    required this.onRequestText,
+    required this.onEditElement,
+    required this.onRequestShapeParams,
+    required this.onRequestDimValue,
+    this.darkPaper = false,
+  });
 
   @override
   State<NoteCanvas> createState() => NoteCanvasState();
@@ -63,6 +77,12 @@ class NoteCanvasState extends State<NoteCanvas> {
   final List<Offset> _dimPts = [];
   List<Offset> _lasso = [];
   Offset? _dragStart;
+  bool _handleDrag = false; // tek seçili ölçünün ofset noktasını sürükleme
+  String? _lastTapId;
+  DateTime _lastTapTime = DateTime(2000);
+  final Set<int> _ignored = {}; // avuç / kalem varken parmak
+  bool _drawIsPen = false;
+  DateTime _lastPenUp = DateTime(2000);
   Offset _dragDelta = Offset.zero;
   final List<SymbolElement> _pendingCones = [];
   bool _tempEraser = false;
@@ -158,22 +178,34 @@ class NoteCanvasState extends State<NoteCanvas> {
   bool get _spaceDown => HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.space);
   bool get _shiftDown => HardwareKeyboard.instance.isShiftPressed;
 
+  bool _isPalm(PointerEvent e) => e.radiusMajor > 24 || (e.size > 0 && e.size > 0.35);
+
   void _onDown(PointerDownEvent e) {
     if (_isTouch(e)) {
+      // Avuç reddi: büyük temas, kalem yazarken ya da kalem yeni kalktıysa parmak yok sayılır
+      final penBusy = (_drawPointer != null && _drawIsPen) || DateTime.now().difference(_lastPenUp) < const Duration(milliseconds: 400);
+      if (_isPalm(e) || (c.stylusOnly && penBusy) || c.canvasLocked && (c.stylusOnly || c.tool == ToolKind.pan)) {
+        _ignored.add(e.pointer);
+        return;
+      }
       final navigate = c.stylusOnly || _touches.isNotEmpty || c.tool == ToolKind.pan;
       _touches[e.pointer] = e.localPosition;
       _touchStart[e.pointer] = e.localPosition;
       if (_touches.length == 2) {
         _cancelDrawing(); // ikinci parmak gelince parmak çizimi iptal → zoom
-        _startPinch();
+        if (!c.canvasLocked) _startPinch();
         _multiTouchStart = DateTime.now();
         _multiMoved = false;
+        _panPointer = null;
         return;
       }
       if (_touches.length > 2) return;
       if (navigate) {
-        _panPointer = e.pointer;
-        _panLast = e.localPosition;
+        // "Yalnızca kalem": tek parmak varsayılan olarak kaydırmaz (avuç ekranı oynatmasın)
+        if (!c.canvasLocked && (c.fingerScroll || !c.stylusOnly || c.tool == ToolKind.pan)) {
+          _panPointer = e.pointer;
+          _panLast = e.localPosition;
+        }
         return;
       }
       // aksi halde parmak çizer
@@ -187,10 +219,12 @@ class NoteCanvasState extends State<NoteCanvas> {
     _tempEraser = e.kind == PointerDeviceKind.invertedStylus || (_isPen(e) && (e.buttons & kPrimaryStylusButton) != 0);
     if (_tempEraser) c.beginTempEraser();
     _drawPointer = e.pointer;
+    _drawIsPen = _isPen(e);
     _beginTool(e);
   }
 
   void _onMove(PointerMoveEvent e) {
+    if (_ignored.contains(e.pointer)) return;
     if (_touches.containsKey(e.pointer)) {
       _touches[e.pointer] = e.localPosition;
       if ((e.localPosition - (_touchStart[e.pointer] ?? e.localPosition)).distance > 12) _multiMoved = true;
@@ -210,6 +244,7 @@ class NoteCanvasState extends State<NoteCanvas> {
   }
 
   void _onUp(PointerEvent e) {
+    if (_ignored.remove(e.pointer)) return;
     final wasTouch = _touches.containsKey(e.pointer);
     if (wasTouch) {
       if (_touches.length == 2 && !_multiMoved && _multiTouchStart != null &&
@@ -220,7 +255,7 @@ class NoteCanvasState extends State<NoteCanvas> {
       _touches.remove(e.pointer);
       _touchStart.remove(e.pointer);
       if (_touches.length < 2) _pinchStartDist = null;
-      if (_touches.length == 1) {
+      if (_touches.length == 1 && !c.canvasLocked && (c.fingerScroll || !c.stylusOnly || c.tool == ToolKind.pan)) {
         _panPointer = _touches.keys.first;
         _panLast = _touches.values.first;
       }
@@ -236,6 +271,7 @@ class NoteCanvasState extends State<NoteCanvas> {
         _endTool(e);
       }
       _drawPointer = null;
+      if (_drawIsPen) _lastPenUp = DateTime.now();
       if (_tempEraser) {
         c.endTempEraser();
         _tempEraser = false;
@@ -250,6 +286,7 @@ class NoteCanvasState extends State<NoteCanvas> {
   }
 
   void _onSignal(PointerSignalEvent e) {
+    if (c.canvasLocked) return;
     if (e is PointerScrollEvent) {
       if (HardwareKeyboard.instance.isControlPressed) {
         zoomAt(e.localPosition, e.scrollDelta.dy < 0 ? 1.12 : 1 / 1.12);
@@ -269,6 +306,7 @@ class NoteCanvasState extends State<NoteCanvas> {
   }
 
   void _updatePinch() {
+    if (c.canvasLocked) return;
     final pts = _touches.values.take(2).toList();
     final d = (pts[0] - pts[1]).distance;
     final focal = (pts[0] + pts[1]) / 2;
@@ -318,6 +356,8 @@ class NoteCanvasState extends State<NoteCanvas> {
         _snapped = null;
         _holdAnchor = p;
         _armHold();
+      case ToolKind.select:
+        _beginSelect(p);
       case ToolKind.eraser:
         c.eraseAt(p, zoom);
       case ToolKind.lasso:
@@ -398,6 +438,8 @@ class NoteCanvasState extends State<NoteCanvas> {
           _holdAnchor = p;
           _armHold();
         }
+      case ToolKind.select:
+        if (_dragStart != null) _dragDelta = p - _dragStart!;
       case ToolKind.eraser:
         c.eraseAt(p, zoom);
       case ToolKind.lasso:
@@ -486,16 +528,32 @@ class NoteCanvasState extends State<NoteCanvas> {
           _dragDelta = Offset.zero;
           _invalidate();
         } else {
-          c.selectByLasso(_lasso);
+          final pathLen = pathLength(_lasso);
+          if (pathLen < 12 / zoom) {
+            c.selectOnly(c.hitTest(p, zoom)?.id); // dokunarak seç
+          } else {
+            c.selectByLasso(_lasso);
+          }
           _lasso = [];
         }
       case ToolKind.shape:
         final a = _shapeA, b = _shapeB;
-        if (a != null && b != null && (b - a).distance > 0.8) {
-          final style = c.pens[PenType.technical]!;
-          c.add(ShapeElement(id: newId(), updatedAt: nowMs(), z: newZ(), kind: c.shapeKind, points: [a, b], style: style));
-        }
+        final style = c.pens[PenType.technical]!;
         _shapeA = _shapeB = null;
+        if (a != null && b != null && (b - a).distance > 0.8) {
+          c.add(ShapeElement(id: newId(), updatedAt: nowMs(), z: newZ(), kind: c.shapeKind, points: [a, b], style: style));
+        } else if (a != null && c.parametric) {
+          final kind = c.shapeKind;
+          final defaults = switch (kind) {
+            ShapeKind.rect => {'Genişlik': 40.0, 'Yükseklik': 20.0},
+            ShapeKind.ellipse => {'Çap Ø': 20.0},
+            _ => {'Uzunluk': 50.0, 'Açı °': 0.0},
+          };
+          final v = await widget.onRequestShapeParams(kind, defaults);
+          if (v != null) {
+            c.add(ShapeElement(id: newId(), updatedAt: nowMs(), z: newZ(), kind: kind, points: c.pointsFromParams(kind, a, v), style: style));
+          }
+        }
       case ToolKind.gate:
         final a = _shapeA, b = _shapeB;
         if (a != null && b != null) {
@@ -534,9 +592,26 @@ class NoteCanvasState extends State<NoteCanvas> {
         if (_pendingCones.isNotEmpty) c.commit(List.of(_pendingCones));
         _pendingCones.clear();
       case ToolKind.text:
-        final txt = await widget.onRequestText('');
-        if (txt != null && txt.trim().isNotEmpty) {
-          c.add(TextElement(id: newId(), updatedAt: nowMs(), z: newZ(), pos: p, text: txt, size: 4));
+        final hit = c.hitTest(p, zoom);
+        if (hit is TextElement) {
+          if (hit.kind == TextKind.checklist) {
+            for (var i = 0; i < hit.lines.length; i++) {
+              if (hit.checkboxRect(i).inflate(1).contains(p)) {
+                c.replace(hit.toggleLine(i));
+                break;
+              }
+            }
+            if (hit.checkboxRect(0).left + hit.size * 1.2 > p.dx) break;
+          }
+          final edited = await widget.onRequestText(hit, false);
+          if (edited != null) edited.text.trim().isEmpty ? c.deleteIds([hit.id]) : c.replace(edited);
+        } else {
+          final d = c.textDefaults;
+          final fresh = TextElement(
+              id: newId(), updatedAt: nowMs(), z: newZ(), pos: p, text: d.kind == TextKind.checklist ? '[ ] ' : '', size: d.size,
+              color: d.color, background: d.background, bold: d.bold, italic: d.italic, underline: d.underline, font: d.font, kind: d.kind);
+          final created = await widget.onRequestText(fresh, true);
+          if (created != null && created.text.replaceAll('[ ]', '').trim().isNotEmpty) c.add(created);
         }
       case ToolKind.gdt:
         c.add(SymbolElement(id: newId(), updatedAt: nowMs(), z: newZ(), kind: SymbolKind.gdtFrame, pos: p, size: 5, params: Map.of(c.gdtParams)));
@@ -549,12 +624,75 @@ class NoteCanvasState extends State<NoteCanvas> {
         c.add(SymbolElement(id: newId(), updatedAt: nowMs(), z: newZ(), kind: SymbolKind.weld, pos: p, size: 3.5, params: Map.of(c.weldParams)));
       case ToolKind.north:
         c.add(SymbolElement(id: newId(), updatedAt: nowMs(), z: newZ(), kind: SymbolKind.northArrow, pos: p, size: 6, color: 0xFF263238));
+      case ToolKind.select:
+        await _endSelect();
       case ToolKind.eraser:
       case ToolKind.pan:
         break;
     }
     _filter = null;
     if (mounted) setState(() {});
+  }
+
+  void _beginSelect(Offset p) {
+    final sel = c.singleSelected;
+    _handleDrag = false;
+    if (sel is DimensionElement && (p - sel.points.last).distance < 16 / zoom) {
+      _handleDrag = true;
+      _dragStart = p;
+      _dragDelta = Offset.zero;
+      _invalidate();
+      return;
+    }
+    final hit = c.hitTest(p, zoom);
+    if (hit is TextElement && hit.kind == TextKind.checklist) {
+      for (var i = 0; i < hit.lines.length; i++) {
+        if (hit.checkboxRect(i).inflate(1).contains(p)) {
+          c.replace(hit.toggleLine(i));
+          return;
+        }
+      }
+    }
+    final b = c.selectionBounds;
+    if (hit != null || (b != null && b.inflate(2).contains(p))) {
+      if (hit != null && !c.selection.contains(hit.id)) c.selectOnly(hit.id);
+      _dragStart = p;
+      _dragDelta = Offset.zero;
+      _invalidate();
+    } else {
+      c.selectOnly(null);
+    }
+  }
+
+  Future<void> _endSelect() async {
+    final start = _dragStart;
+    final delta = _dragDelta;
+    final handle = _handleDrag;
+    _dragStart = null;
+    _dragDelta = Offset.zero;
+    _handleDrag = false;
+    _invalidate();
+    if (start == null) return;
+    final sel = c.singleSelected;
+    if (handle && sel is DimensionElement) {
+      final pts = List.of(sel.points);
+      pts[pts.length - 1] = pts.last + delta;
+      c.replace(sel.copyWith(points: pts));
+      return;
+    }
+    if (delta.distance > 0.5) {
+      c.moveSelection(delta);
+      return;
+    }
+    // dokunma: çift dokunma → düzenle
+    final now = DateTime.now();
+    if (sel != null && _lastTapId == sel.id && now.difference(_lastTapTime) < const Duration(milliseconds: 450)) {
+      _lastTapId = null;
+      await widget.onEditElement(sel);
+    } else {
+      _lastTapId = sel?.id;
+      _lastTapTime = now;
+    }
   }
 
   void _advanceDimension() {
@@ -565,7 +703,7 @@ class NoteCanvasState extends State<NoteCanvas> {
       _dimPts.add(_dimPts.last);
       return;
     }
-    c.add(DimensionElement(
+    final dim = DimensionElement(
       id: newId(),
       updatedAt: nowMs(),
       z: newZ(),
@@ -574,8 +712,15 @@ class NoteCanvasState extends State<NoteCanvas> {
       tolerance: c.tool == ToolKind.distance ? const DimTolerance() : c.nextTolerance,
       textHeight: c.tool == ToolKind.distance ? 3.0 : c.dimTextHeight,
       color: c.tool == ToolKind.distance ? 0xFF6A1B9A : 0xFF0D47A1,
-    ));
+    );
+    c.add(dim);
     _dimPts.clear();
+    if (c.page.scale.isFree && kind != DimKind.angle) {
+      widget.onRequestDimValue(dim).then((v) {
+        final cur = c.page.elements[dim.id];
+        if (v != null && v.trim().isNotEmpty && cur is DimensionElement) c.replace(cur.copyWith(textOverride: v.trim()));
+      });
+    }
   }
 
   /// Esc
@@ -662,12 +807,25 @@ class _CanvasPainter extends CustomPainter {
 
     // Taşınan seçim
     if (s._dragStart != null) {
-      canvas.save();
-      canvas.translate(s._dragDelta.dx, s._dragDelta.dy);
-      for (final e in c.selected) {
-        paintElement(canvas, e, page.scale);
+      final sel = c.singleSelected;
+      if (s._handleDrag && sel is DimensionElement) {
+        final pts = List.of(sel.points);
+        pts[pts.length - 1] = pts.last + s._dragDelta;
+        paintDimension(canvas, sel.copyWith(points: pts), page.scale);
+      } else {
+        canvas.save();
+        canvas.translate(s._dragDelta.dx, s._dragDelta.dy);
+        for (final e in c.selected) {
+          paintElement(canvas, e, page.scale);
+        }
+        canvas.restore();
       }
-      canvas.restore();
+    }
+    // tek seçili ölçünün tutamacı
+    final one = c.singleSelected;
+    if (one is DimensionElement && s._dragStart == null) {
+      canvas.drawCircle(one.points.last, 6 / s.zoom, Paint()..color = const Color(0xFF1E88E5));
+      canvas.drawCircle(one.points.last, 3 / s.zoom, Paint()..color = const Color(0xFFFFFFFF));
     }
 
     // Canlı önizleme
@@ -732,7 +890,7 @@ class _CanvasPainter extends CustomPainter {
             ..strokeWidth = 1.2 / s.zoom);
     }
     final sb = c.selectionBounds;
-    if (sb != null) paintSelection(canvas, sb.shift(s._dragDelta), s.zoom);
+    if (sb != null) paintSelection(canvas, s._handleDrag ? sb : sb.shift(s._dragDelta), s.zoom);
     canvas.restore();
   }
 

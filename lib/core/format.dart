@@ -17,6 +17,9 @@ String formatTolValue(double v) => '${v >= 0 ? '+' : '−'}${formatNumber(v.abs(
 String dimensionMainText(DimensionElement d, ScaleSpec scale) {
   if (d.textOverride != null && d.textOverride!.isNotEmpty) return d.textOverride!;
   if (d.kind == DimKind.angle) return '${formatNumber(d.paperValue, maxDecimals: 1)}°';
+  if (scale.isFree) {
+    return switch (d.kind) { DimKind.radius => 'R?', DimKind.diameter => 'Ø?', _ => '?' };
+  }
   final real = scale.realFromPaper(d.paperValue);
   final decimals = scale.unit == 'm' ? 2 : 2;
   final n = formatNumber(real, maxDecimals: decimals);

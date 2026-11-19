@@ -37,6 +37,10 @@ class ScaleSpec {
 
   static const oneToOne = ScaleSpec(1, 1);
   static const moto200 = ScaleSpec(1, 200, 'm');
+  /// Ölçeksiz eskiz: ölçü değerleri elle yazılır
+  static const free = ScaleSpec(1, 1, 'free');
+
+  bool get isFree => unit == 'free';
 
   /// Kağıt mm -> gerçek değer (unit cinsinden)
   double realFromPaper(double paperMm) {
@@ -50,7 +54,7 @@ class ScaleSpec {
     return mm * numerator / denominator;
   }
 
-  String get label => '$numerator:$denominator${unit == 'm' ? ' (m)' : ''}';
+  String get label => isFree ? 'Ölçeksiz' : '$numerator:$denominator${unit == 'm' ? ' (m)' : ''}';
 
   Map<String, dynamic> toJson() => {'n': numerator, 'd': denominator, 'u': unit};
   factory ScaleSpec.fromJson(Map<String, dynamic> j) =>
@@ -440,37 +444,126 @@ class DimensionElement extends NoteElement {
       );
 }
 
+enum TextKind { plain, box, checklist, bullet }
+
+enum FontKind { sans, serif, mono }
+
 class TextElement extends NoteElement {
   final Offset pos; // sol üst
-  final String text;
+  final String text; // checklist satırları "[x] " / "[ ] " önekli
   final double size; // mm (yazı yüksekliği)
   final int color;
+  final int? background; // ARGB, null = saydam
+  final bool bold, italic, underline;
+  final FontKind font;
+  final TextKind kind;
+  final double? boxWidth; // mm, metin kutusu genişliği (null = otomatik)
   final bool fromInk; // el yazısından çevrildi
-  const TextElement(
-      {required super.id, required super.updatedAt, required super.z, required this.pos, required this.text, this.size = 4, this.color = 0xFF000000, this.fromInk = false});
+  const TextElement({
+    required super.id,
+    required super.updatedAt,
+    required super.z,
+    required this.pos,
+    required this.text,
+    this.size = 4,
+    this.color = 0xFF000000,
+    this.background,
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+    this.font = FontKind.sans,
+    this.kind = TextKind.plain,
+    this.boxWidth,
+    this.fromInk = false,
+  });
 
   @override
   String get type => 'text';
+
+  List<String> get lines => text.split('\n');
+  double get lineHeight => size * 1.35;
+  double get indent => kind == TextKind.checklist || kind == TextKind.bullet ? size * 1.4 : 0;
+  double get pad => kind == TextKind.box || background != null ? size * 0.4 : 0;
+
   @override
   Rect get bounds {
-    final lines = text.split('\n');
-    final w = lines.map((l) => l.length).fold<int>(1, math.max) * size * 0.55;
-    return Rect.fromLTWH(pos.dx, pos.dy, w, lines.length * size * 1.3);
+    final w = boxWidth ?? (lines.map((l) => l.length).fold<int>(1, math.max) * size * (bold ? 0.6 : 0.55) + indent);
+    return Rect.fromLTWH(pos.dx - pad, pos.dy - pad, w + 2 * pad, lines.length * lineHeight + 2 * pad);
+  }
+
+  /// Satır i'nin onay kutusu alanı (checklist)
+  Rect checkboxRect(int i) => Rect.fromLTWH(pos.dx, pos.dy + i * lineHeight + size * 0.1, size * 0.95, size * 0.95);
+
+  TextElement copyWith({
+    Offset? pos,
+    String? text,
+    double? size,
+    int? color,
+    int? background,
+    bool clearBackground = false,
+    bool? bold,
+    bool? italic,
+    bool? underline,
+    FontKind? font,
+    TextKind? kind,
+    double? boxWidth,
+  }) =>
+      TextElement(
+        id: id,
+        updatedAt: nowMs(),
+        z: z,
+        pos: pos ?? this.pos,
+        text: text ?? this.text,
+        size: size ?? this.size,
+        color: color ?? this.color,
+        background: clearBackground ? null : (background ?? this.background),
+        bold: bold ?? this.bold,
+        italic: italic ?? this.italic,
+        underline: underline ?? this.underline,
+        font: font ?? this.font,
+        kind: kind ?? this.kind,
+        boxWidth: boxWidth ?? this.boxWidth,
+        fromInk: fromInk,
+      );
+
+  /// Checklist satırını aç/kapat
+  TextElement toggleLine(int i) {
+    final ls = lines;
+    if (i < 0 || i >= ls.length) return this;
+    final l = ls[i];
+    if (l.startsWith('[x] ')) {
+      ls[i] = '[ ] ${l.substring(4)}';
+    } else if (l.startsWith('[ ] ')) {
+      ls[i] = '[x] ${l.substring(4)}';
+    } else {
+      ls[i] = '[x] $l';
+    }
+    return copyWith(text: ls.join('\n'));
   }
 
   @override
-  TextElement translated(Offset d) =>
-      TextElement(id: id, updatedAt: nowMs(), z: z, pos: pos + d, text: text, size: size, color: color, fromInk: fromInk);
+  TextElement translated(Offset d) => copyWith(pos: pos + d);
 
-  TextElement withText(String t) =>
-      TextElement(id: id, updatedAt: nowMs(), z: z, pos: pos, text: t, size: size, color: color, fromInk: fromInk);
+  TextElement withText(String t) => copyWith(text: t);
 
   @override
   NoteElement tombstone() => Tombstone(id: id, updatedAt: nowMs(), z: z, originalType: type);
 
   @override
-  Map<String, dynamic> bodyJson() =>
-      {'p': _o(pos), 't': text, 's': size, 'c': color, if (fromInk) 'i': 1};
+  Map<String, dynamic> bodyJson() => {
+        'p': _o(pos),
+        't': text,
+        's': size,
+        'c': color,
+        if (background != null) 'bg': background,
+        if (bold) 'b': 1,
+        if (italic) 'it': 1,
+        if (underline) 'ul': 1,
+        if (font != FontKind.sans) 'f': font.index,
+        if (kind != TextKind.plain) 'k': kind.index,
+        if (boxWidth != null) 'bw': boxWidth,
+        if (fromInk) 'i': 1,
+      };
 
   factory TextElement.fromBody(String id, int u, double z, Map<String, dynamic> j) => TextElement(
         id: id,
@@ -480,6 +573,13 @@ class TextElement extends NoteElement {
         text: j['t'] as String,
         size: (j['s'] as num).toDouble(),
         color: j['c'] as int,
+        background: j['bg'] as int?,
+        bold: j['b'] == 1,
+        italic: j['it'] == 1,
+        underline: j['ul'] == 1,
+        font: FontKind.values[(j['f'] as int?) ?? 0],
+        kind: TextKind.values[(j['k'] as int?) ?? 0],
+        boxWidth: (j['bw'] as num?)?.toDouble(),
         fromInk: j['i'] == 1,
       );
 }

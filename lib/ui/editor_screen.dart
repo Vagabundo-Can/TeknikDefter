@@ -9,7 +9,9 @@ import '../models/note_models.dart';
 import '../recognition/handwriting.dart';
 import '../storage/local_store.dart';
 import '../sync/drive_sync.dart';
+import 'element_editors.dart';
 import 'layout.dart';
+import 'pen_glyph.dart';
 import 'sync_button.dart';
 import 'tool_options.dart';
 
@@ -108,6 +110,7 @@ class _EditorScreenState extends State<EditorScreen> {
       return KeyEventResult.handled;
     }
     final map = <LogicalKeyboardKey, ToolKind>{
+      LogicalKeyboardKey.keyV: ToolKind.select,
       LogicalKeyboardKey.keyP: ToolKind.pen,
       LogicalKeyboardKey.keyH: ToolKind.highlighter,
       LogicalKeyboardKey.keyE: ToolKind.eraser,
@@ -184,6 +187,100 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
+  NoteCanvas _canvas() => NoteCanvas(
+        key: _canvasKey,
+        controller: ctrl,
+        onRequestText: (t, isNew) => showTextEditor(context, t, isNew: isNew),
+        onEditElement: (e) => showElementEditor(context, ctrl, e),
+        onRequestShapeParams: (k, d) => showParamsDialog(
+            context,
+            switch (k) { ShapeKind.rect => 'Dikdörtgen', ShapeKind.ellipse => 'Daire', _ => 'Çizgi' },
+            d,
+            unitOf(ctrl.page.scale)),
+        onRequestDimValue: (d) => askDimensionText(context, d),
+      );
+
+  /// Araç seçimi: aynı araca ikinci dokunuş ayar panelini açar (Samsung Notes gibi)
+  void _pickTool(BuildContext anchor, ToolKind t, {PenType? pen}) {
+    final same = ctrl.tool == t && (pen == null || ctrl.penType == pen);
+    if (pen != null) {
+      ctrl.setPenType(pen);
+    } else {
+      ctrl.setTool(t);
+    }
+    if (same) _openPanel(anchor, (_) => ToolOptionsPanel(ctrl: ctrl));
+  }
+
+  void _openGroup(BuildContext anchor, String title, List<ToolKind> group) {
+    _openPanel(anchor, (ctx) {
+      final inGroup = group.contains(ctrl.tool);
+      return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: Theme.of(ctx).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final t in group)
+            _GroupTile(
+              info: toolInfos[t]!,
+              selected: ctrl.tool == t,
+              onTap: () => ctrl.setTool(t),
+            ),
+        ]),
+        if (inGroup) ...[
+          const Divider(height: 24),
+          ToolOptionsPanel(ctrl: ctrl),
+        ],
+      ]);
+    });
+  }
+
+  void _openPanel(BuildContext anchor, WidgetBuilder builder) {
+    if (formFactorOf(context) == FormFactor.phone) {
+      showModalBottomSheet(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (ctx) => ListenableBuilder(
+          listenable: ctrl,
+          builder: (ctx, _) => SafeArea(
+            child: SingleChildScrollView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: builder(ctx)),
+          ),
+        ),
+      );
+      return;
+    }
+    final box = anchor.findRenderObject() as RenderBox?;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final rect = box == null ? Rect.zero : box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
+    final screen = overlay.size;
+    const width = 440.0;
+    final left = (rect.center.dx - width / 2).clamp(8.0, screen.width - width - 8);
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Kapat',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 120),
+      pageBuilder: (ctx, _, __) => Stack(children: [
+        Positioned(
+          left: left,
+          top: rect.bottom + 6,
+          width: width,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(16),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: screen.height - rect.bottom - 24),
+              child: ListenableBuilder(
+                listenable: ctrl,
+                builder: (ctx, _) => SingleChildScrollView(padding: const EdgeInsets.all(14), child: builder(ctx)),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ff = formFactorOf(context);
@@ -191,9 +288,10 @@ class _EditorScreenState extends State<EditorScreen> {
       listenable: ctrl,
       builder: (context, _) {
         final page = ctrl.page;
-        final tools = toolsFor(page.mode);
-        final canvas = NoteCanvas(key: _canvasKey, controller: ctrl, onRequestText: (s) => _askText(s));
-        final selectionBar = ctrl.selection.isEmpty ? null : _SelectionBar(ctrl: ctrl, onConvert: _convertToText);
+        final selectionBar = ctrl.selection.isEmpty ? null : _SelectionBar(ctrl: ctrl, onConvert: _convertToText, onEdit: () {
+          final e = ctrl.singleSelected;
+          if (e != null) showElementEditor(context, ctrl, e);
+        });
 
         final appBar = AppBar(
           title: InkWell(
@@ -213,6 +311,12 @@ class _EditorScreenState extends State<EditorScreen> {
           actions: [
             IconButton(tooltip: 'Geri al (Ctrl+Z)', onPressed: ctrl.canUndo ? ctrl.undo : null, icon: const Icon(Icons.undo)),
             IconButton(tooltip: 'Yinele (Ctrl+Y)', onPressed: ctrl.canRedo ? ctrl.redo : null, icon: const Icon(Icons.redo)),
+            IconButton(
+              tooltip: ctrl.canvasLocked ? 'Sayfa kilitli: kaydırma/zoom kapalı' : 'Sayfayı kilitle (el ekranı oynatmasın)',
+              isSelected: ctrl.canvasLocked,
+              onPressed: () => ctrl.update(() => ctrl.canvasLocked = !ctrl.canvasLocked),
+              icon: Icon(ctrl.canvasLocked ? Icons.lock : Icons.lock_open_outlined),
+            ),
             if (ff != FormFactor.phone)
               IconButton(tooltip: 'Sayfaya sığdır (Ctrl+0)', onPressed: () => _canvasKey.currentState?.fitPage(), icon: const Icon(Icons.fit_screen)),
             const SyncButton(),
@@ -220,145 +324,229 @@ class _EditorScreenState extends State<EditorScreen> {
           ],
         );
 
+        final body = Focus(
+          focusNode: _focus,
+          autofocus: true,
+          onKeyEvent: _onKey,
+          child: Stack(children: [
+            Positioned.fill(child: _canvas()),
+            if (ff != FormFactor.phone) Positioned(left: 0, right: 0, top: 10, child: Center(child: _Toolbar(state: this))),
+            if (selectionBar != null) Positioned(left: 8, right: 8, top: ff == FormFactor.phone ? 8 : 74, child: Center(child: selectionBar)),
+          ]),
+        );
+
         if (ff == FormFactor.phone) {
-          final primary = primaryToolsFor(page.mode);
           return Scaffold(
             appBar: appBar,
-            body: Focus(
-              focusNode: _focus,
-              autofocus: true,
-              onKeyEvent: _onKey,
-              child: Stack(children: [
-                Positioned.fill(child: canvas),
-                if (selectionBar != null) Positioned(left: 8, right: 8, top: 8, child: Center(child: selectionBar)),
-              ]),
-            ),
+            body: body,
             bottomNavigationBar: SafeArea(
-              child: Material(
-                elevation: 6,
-                child: SizedBox(
-                  height: 60,
-                  child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-                    for (final t in primary)
-                      _ToolButton(
-                        info: toolInfos[t]!,
-                        selected: ctrl.tool == t,
-                        onTap: () => ctrl.tool == t ? _showOptionsSheet() : ctrl.setTool(t),
-                      ),
-                    IconButton(
-                      tooltip: 'Daha fazla',
-                      icon: Icon(primary.contains(ctrl.tool) ? Icons.apps : toolInfos[ctrl.tool]!.icon),
-                      isSelected: !primary.contains(ctrl.tool),
-                      onPressed: () => _showAllToolsSheet(tools),
-                    ),
-                  ]),
-                ),
-              ),
+              child: Material(elevation: 6, child: SizedBox(height: 62, child: _PhoneBar(state: this))),
             ),
           );
         }
-
-        // Tablet + Windows
-        return Scaffold(
-          appBar: appBar,
-          body: Focus(
-            focusNode: _focus,
-            autofocus: true,
-            onKeyEvent: _onKey,
-            child: Column(children: [
-              Material(
-                elevation: 1,
-                child: SizedBox(
-                  height: 52,
-                  child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8), children: [
-                    for (final t in tools) ...[
-                      if (t == ToolKind.dimension || t == ToolKind.cone) const VerticalDivider(indent: 10, endIndent: 10),
-                      _ToolButton(info: toolInfos[t]!, selected: ctrl.tool == t, onTap: () => ctrl.setTool(t), showShortcut: ff == FormFactor.desktop),
-                    ],
-                  ]),
-                ),
-              ),
-              Material(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: SizedBox(height: 44, child: ToolOptionsBar(ctrl: ctrl)),
-                ),
-              ),
-              Expanded(
-                child: Stack(children: [
-                  Positioned.fill(child: canvas),
-                  if (selectionBar != null) Positioned(left: 0, right: 0, top: 12, child: Center(child: selectionBar)),
-                ]),
-              ),
-            ]),
-          ),
-        );
+        return Scaffold(appBar: appBar, body: body);
       },
     );
   }
+}
 
-  void _showOptionsSheet() {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      builder: (_) => ListenableBuilder(
-        listenable: ctrl,
-        builder: (_, __) => Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), child: ToolOptionsPanel(ctrl: ctrl)),
-      ),
-    );
-  }
+// ---------------------------------------------------------------------------
+// Araç çubuğu (tablet / Windows): Samsung Notes tarzı yüzen çubuk
 
-  void _showAllToolsSheet(List<ToolKind> tools) {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-        child: Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final t in tools)
-            SizedBox(
-              width: 84,
+class _Toolbar extends StatelessWidget {
+  final _EditorScreenState state;
+  const _Toolbar({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final ctrl = state.ctrl;
+    final mode = ctrl.page.mode;
+    final scheme = Theme.of(context).colorScheme;
+    Widget tool(ToolKind t) => Builder(
+          builder: (b) => _IconTool(
+            info: toolInfos[t]!,
+            selected: ctrl.tool == t,
+            onTap: () => state._pickTool(b, t),
+          ),
+        );
+    Widget pen(PenType p) => Builder(
+          builder: (b) {
+            final isHl = p == PenType.highlighter;
+            final selected = isHl ? ctrl.tool == ToolKind.highlighter : (ctrl.tool == ToolKind.pen && ctrl.penType == p);
+            return Tooltip(
+              message: p.label,
               child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  ctrl.setTool(t);
-                  Navigator.pop(ctx);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Column(children: [
-                    Icon(toolInfos[t]!.icon, color: ctrl.tool == t ? Theme.of(ctx).colorScheme.primary : null),
-                    const SizedBox(height: 4),
-                    Text(toolInfos[t]!.label, style: Theme.of(ctx).textTheme.labelSmall, textAlign: TextAlign.center),
-                  ]),
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => isHl ? state._pickTool(b, ToolKind.highlighter) : state._pickTool(b, ToolKind.pen, pen: p),
+                child: Container(
+                  width: 42,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: selected ? scheme.primaryContainer : null,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: PenGlyph(type: p, color: Color(ctrl.pens[p]!.color), selected: selected),
                 ),
               ),
-            ),
-        ]),
+            );
+          },
+        );
+    Widget group(String label, IconData icon, List<ToolKind> tools) => Builder(
+          builder: (b) {
+            final active = tools.contains(ctrl.tool);
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: FilledButton.tonalIcon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: active ? scheme.primaryContainer : scheme.surfaceContainerHighest,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+                onPressed: () => state._openGroup(b, label, tools),
+                icon: Icon(active ? toolInfos[ctrl.tool]!.icon : icon, size: 20),
+                label: Text(label),
+              ),
+            );
+          },
+        );
+    return Material(
+      elevation: 3,
+      color: scheme.surface,
+      borderRadius: BorderRadius.circular(28),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            tool(ToolKind.select),
+            const SizedBox(width: 4),
+            pen(PenType.fountain),
+            pen(PenType.ballpoint),
+            pen(PenType.pencil),
+            pen(PenType.technical),
+            pen(PenType.highlighter),
+            const SizedBox(width: 4),
+            tool(ToolKind.eraser),
+            tool(ToolKind.lasso),
+            tool(ToolKind.text),
+            tool(ToolKind.shape),
+            const SizedBox(height: 32, child: VerticalDivider(width: 16)),
+            if (showsEngineering(mode)) group('Mühendislik', Icons.architecture, engineeringTools),
+            if (showsMoto(mode)) group('Motosiklet', Icons.two_wheeler, motoTools),
+          ]),
+        ),
       ),
     );
   }
 }
 
-class _ToolButton extends StatelessWidget {
+class _PhoneBar extends StatelessWidget {
+  final _EditorScreenState state;
+  const _PhoneBar({required this.state});
+  @override
+  Widget build(BuildContext context) {
+    final ctrl = state.ctrl;
+    final mode = ctrl.page.mode;
+    final scheme = Theme.of(context).colorScheme;
+    final penSel = ctrl.tool == ToolKind.pen || ctrl.tool == ToolKind.highlighter;
+    final penType = ctrl.tool == ToolKind.highlighter ? PenType.highlighter : ctrl.penType;
+    Widget tool(ToolKind t) => Builder(
+        builder: (b) => _IconTool(info: toolInfos[t]!, selected: ctrl.tool == t, onTap: () => state._pickTool(b, t)));
+    return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+      tool(ToolKind.select),
+      Builder(
+        builder: (b) => InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            if (!penSel) {
+              ctrl.setTool(ToolKind.pen);
+            } else {
+              state._openPanel(b, (ctx) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Wrap(spacing: 8, children: [
+                      for (final p in PenType.values)
+                        InkWell(
+                          onTap: () => p == PenType.highlighter ? ctrl.setTool(ToolKind.highlighter) : ctrl.setPenType(p),
+                          child: Padding(padding: const EdgeInsets.all(4), child: PenGlyph(type: p, color: Color(ctrl.pens[p]!.color), size: 40)),
+                        ),
+                    ]),
+                    const Divider(),
+                    ToolOptionsPanel(ctrl: ctrl),
+                  ]));
+            }
+          },
+          child: Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: penSel ? scheme.primaryContainer : null, borderRadius: BorderRadius.circular(10)),
+            child: PenGlyph(type: penType, color: Color(ctrl.pens[penType]!.color), selected: penSel),
+          ),
+        ),
+      ),
+      tool(ToolKind.eraser),
+      tool(ToolKind.lasso),
+      tool(ToolKind.text),
+      tool(ToolKind.shape),
+      if (showsEngineering(mode))
+        Builder(
+            builder: (b) => IconButton(
+                  tooltip: 'Mühendislik',
+                  isSelected: engineeringTools.contains(ctrl.tool),
+                  icon: Icon(engineeringTools.contains(ctrl.tool) ? toolInfos[ctrl.tool]!.icon : Icons.architecture),
+                  onPressed: () => state._openGroup(b, 'Mühendislik', engineeringTools),
+                )),
+      if (showsMoto(mode))
+        Builder(
+            builder: (b) => IconButton(
+                  tooltip: 'Motosiklet',
+                  isSelected: motoTools.contains(ctrl.tool),
+                  icon: Icon(motoTools.contains(ctrl.tool) ? toolInfos[ctrl.tool]!.icon : Icons.two_wheeler),
+                  onPressed: () => state._openGroup(b, 'Motosiklet', motoTools),
+                )),
+    ]);
+  }
+}
+
+class _IconTool extends StatelessWidget {
   final ToolInfo info;
   final bool selected;
   final VoidCallback onTap;
-  final bool showShortcut;
-  const _ToolButton({required this.info, required this.selected, required this.onTap, this.showShortcut = false});
+  const _IconTool({required this.info, required this.selected, required this.onTap});
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: info.shortcut != null ? '${info.label} (${info.shortcut})' : info.label,
+        child: IconButton(
+          isSelected: selected,
+          style: IconButton.styleFrom(backgroundColor: selected ? Theme.of(context).colorScheme.primaryContainer : null),
+          icon: Icon(info.icon),
+          onPressed: onTap,
+        ),
+      );
+}
 
+class _GroupTile extends StatelessWidget {
+  final ToolInfo info;
+  final bool selected;
+  final VoidCallback onTap;
+  const _GroupTile({required this.info, required this.selected, required this.onTap});
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: showShortcut && info.shortcut != null ? '${info.label} (${info.shortcut})' : info.label,
-      child: IconButton(
-        isSelected: selected,
-        style: IconButton.styleFrom(
-          backgroundColor: selected ? Theme.of(context).colorScheme.primaryContainer : null,
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        width: 92,
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        decoration: BoxDecoration(
+          color: selected ? scheme.primaryContainer : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
         ),
-        icon: Icon(info.icon),
-        onPressed: onTap,
+        child: Column(children: [
+          Icon(info.icon, color: selected ? scheme.onPrimaryContainer : null),
+          const SizedBox(height: 4),
+          Text(info.label, style: Theme.of(context).textTheme.labelSmall, textAlign: TextAlign.center, maxLines: 2),
+        ]),
       ),
     );
   }
@@ -367,11 +555,13 @@ class _ToolButton extends StatelessWidget {
 class _SelectionBar extends StatelessWidget {
   final EditorController ctrl;
   final VoidCallback onConvert;
-  const _SelectionBar({required this.ctrl, required this.onConvert});
+  final VoidCallback onEdit;
+  const _SelectionBar({required this.ctrl, required this.onConvert, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
     final hasStrokes = ctrl.selected.any((e) => e is StrokeElement);
+    final single = ctrl.singleSelected;
     return Material(
       elevation: 4,
       borderRadius: BorderRadius.circular(24),
@@ -381,6 +571,8 @@ class _SelectionBar extends StatelessWidget {
           scrollDirection: Axis.horizontal,
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text('${ctrl.selection.length} seçili')),
+            if (single != null && single is! StrokeElement)
+              TextButton.icon(onPressed: onEdit, icon: const Icon(Icons.tune), label: const Text('Düzenle')),
             if (hasStrokes) ...[
               TextButton.icon(onPressed: onConvert, icon: const Icon(Icons.text_fields), label: const Text('Metne çevir')),
               TextButton.icon(onPressed: ctrl.alignSelection, icon: const Icon(Icons.format_align_left), label: const Text('Hizala')),
@@ -401,6 +593,8 @@ class _SelectionBar extends StatelessWidget {
               ],
               onSelected: ctrl.recolorSelection,
             ),
+            IconButton(tooltip: 'Öne getir', onPressed: () => ctrl.bringSelection(front: true), icon: const Icon(Icons.flip_to_front)),
+            IconButton(tooltip: 'Arkaya gönder', onPressed: () => ctrl.bringSelection(front: false), icon: const Icon(Icons.flip_to_back)),
             IconButton(tooltip: 'Çoğalt (Ctrl+D)', onPressed: ctrl.duplicateSelection, icon: const Icon(Icons.copy)),
             IconButton(tooltip: 'Sil', onPressed: ctrl.deleteSelection, icon: const Icon(Icons.delete_outline)),
             IconButton(tooltip: 'Kapat', onPressed: ctrl.clearSelection, icon: const Icon(Icons.close)),
@@ -415,7 +609,7 @@ class PageMenu extends StatelessWidget {
   final EditorController ctrl;
   const PageMenu({super.key, required this.ctrl});
 
-  static const engScales = [ScaleSpec(5, 1), ScaleSpec(2, 1), ScaleSpec(1, 1), ScaleSpec(1, 2), ScaleSpec(1, 5), ScaleSpec(1, 10), ScaleSpec(1, 20)];
+  static const engScales = [ScaleSpec.free, ScaleSpec(5, 1), ScaleSpec(2, 1), ScaleSpec(1, 1), ScaleSpec(1, 2), ScaleSpec(1, 5), ScaleSpec(1, 10), ScaleSpec(1, 20)];
   static const motoScales = [ScaleSpec(1, 100, 'm'), ScaleSpec(1, 200, 'm'), ScaleSpec(1, 500, 'm'), ScaleSpec(1, 1000, 'm')];
 
   @override
@@ -431,6 +625,15 @@ class PageMenu extends StatelessWidget {
         const PopupMenuItem(enabled: false, child: Text('Ölçek')),
         for (final s in [...engScales, ...motoScales])
           CheckedPopupMenuItem(value: () => ctrl.setScale(s), checked: ctrl.page.scale == s, child: Text(s.label)),
+        const PopupMenuDivider(),
+        CheckedPopupMenuItem(
+            value: () => ctrl.update(() => ctrl.stylusOnly = !ctrl.stylusOnly), checked: ctrl.stylusOnly, child: const Text('Yalnızca kalem çizer')),
+        CheckedPopupMenuItem(
+            value: () => ctrl.update(() => ctrl.fingerScroll = !ctrl.fingerScroll),
+            checked: ctrl.fingerScroll,
+            child: const Text('Tek parmakla kaydır')),
+        CheckedPopupMenuItem(
+            value: () => ctrl.update(() => ctrl.canvasLocked = !ctrl.canvasLocked), checked: ctrl.canvasLocked, child: const Text('Sayfayı kilitle')),
       ],
     );
   }

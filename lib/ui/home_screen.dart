@@ -8,6 +8,7 @@ import '../templates/templates.dart';
 import 'editor_screen.dart';
 import 'layout.dart';
 import 'new_page_wizard.dart';
+import 'pen_glyph.dart' show AppLogo;
 import 'sync_button.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -121,7 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
 
     final appBar = AppBar(
-      title: Text(nb?.title ?? 'Teknik Defter'),
+      title: Row(children: [const AppLogo(size: 34), const SizedBox(width: 10), Flexible(child: Text(nb?.title ?? 'Teknik Defter', overflow: TextOverflow.ellipsis))]),
       actions: const [SyncButton(), SizedBox(width: 4), AccountButton(), SizedBox(width: 8)],
     );
     final fab = nb == null
