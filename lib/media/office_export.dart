@@ -29,6 +29,7 @@ void _add(Archive a, String name, List<int> bytes) => a.addFile(ArchiveFile(name
 void _addStr(Archive a, String name, String s) => _add(a, name, utf8.encode(s));
 
 Future<File> _write(Archive a, String title, String ext) async {
+  // ignore: unnecessary_nullable_for_final_variable_declarations
   final List<int>? bytes = ZipEncoder().encode(a);
   final dir = await getTemporaryDirectory();
   final f = File('${dir.path}/${safeName(title)}.$ext');
