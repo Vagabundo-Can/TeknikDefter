@@ -22,6 +22,15 @@ dependencies:
   googleapis: ">=12.0.0 <16.0.0"    # Drive v3
   # El yazısı tanıma (Android, cihaz üstü)
   google_mlkit_digital_ink_recognition: ">=0.11.0 <1.0.0"
+  # Aşama 2: PDF, görsel, ses, paylaşım
+  pdf: ^3.11.0                      # PDF üretimi (dışa aktarma)
+  pdfrx: ">=1.0.0 <2.0.0"           # PDF sayfalarını görüntüye çevirme (içe aktarma)
+  file_picker: ">=8.0.0 <11.0.0"
+  image_picker: ^1.1.2
+  share_plus: ^10.1.0
+  record: ^5.1.2
+  audioplayers: ^6.1.0
+  path: ^1.9.0
 
 dev_dependencies:
   flutter_test:

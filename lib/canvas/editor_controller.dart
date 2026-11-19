@@ -259,6 +259,8 @@ class EditorController extends ChangeNotifier {
             changes.add(e.withPoints(part, newIdentity: true));
           }
         }
+      } else if (e is ImageElement) {
+        continue; // görseller silgiyle silinmez (seç → sil)
       } else {
         // diğer elemanlar: bütün olarak
         changes.add(e.tombstone());
@@ -285,6 +287,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     for (final e in page.visible) {
+      if (e is ImageElement && e.locked) continue;
       if (e is StrokeElement) {
         final inside = e.points.where((q) => pointInPolygon(q.o, poly)).length;
         if (inside >= e.points.length * 0.6) selection.add(e.id);
@@ -420,6 +423,7 @@ class EditorController extends ChangeNotifier {
     final tol = 10 / zoom;
     for (final e in page.visible.reversed) {
       if (!e.bounds.inflate(tol).contains(p)) continue;
+      if (e is ImageElement && e.locked) continue;
       switch (e) {
         case StrokeElement s:
           for (var i = 0; i + 1 < s.points.length; i++) {
@@ -610,5 +614,35 @@ class EditorController extends ChangeNotifier {
       out.add(NoteElement.fromJson(j));
     }
     commit(out);
+  }
+
+  /// Seçimi merkezi etrafında döndür
+  void rotateSelection(double angle) {
+    final b = selectionBounds;
+    if (b == null || angle == 0) return;
+    commit([for (final e in selected) rotateElement(e, b.center, angle)]);
+  }
+
+  /// Görsel ekle: genişlik en fazla [maxWidthMm], en-boy oranı korunur, [center] etrafında
+  ImageElement addImage(String assetId, int pxW, int pxH, Offset center, {double maxWidthMm = 120}) {
+    final w = math.min(maxWidthMm, page.infinite ? maxWidthMm : page.widthMm * 0.8);
+    final h = w * pxH / math.max(1, pxW);
+    final e = ImageElement(id: newId(), updatedAt: nowMs(), z: newZ(), assetId: assetId, rect: Rect.fromCenter(center: center, width: w, height: h));
+    add(e);
+    selectOnly(e.id);
+    tool = ToolKind.select;
+    notifyListeners();
+    return e;
+  }
+
+  void addAudio(String assetId, int durationMs, Offset at) {
+    add(AudioElement(id: newId(), updatedAt: nowMs(), z: newZ(), assetId: assetId, pos: at, durationMs: durationMs));
+  }
+
+  /// Sonsuz tuvalde içeriğin sınırı (mm)
+  Rect contentBounds() {
+    final v = page.visible;
+    if (v.isEmpty) return Rect.fromLTWH(0, 0, page.widthMm, page.heightMm);
+    return v.map((e) => e.bounds).reduce((a, b) => a.expandToInclude(b));
   }
 }

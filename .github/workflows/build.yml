@@ -30,9 +30,6 @@ jobs:
         run: |
           flutter create --platforms=android,windows --org com.vagabundo --project-name teknik_defter .
           rm -f test/widget_test.dart
-          M=android/app/src/main/AndroidManifest.xml
-          grep -q android.permission.INTERNET $M || sed -i 's#<manifest xmlns:android="http://schemas.android.com/apk/res/android">#&\n    <uses-permission android:name="android.permission.INTERNET"/>#' $M
-          sed -i 's#android:label="teknik_defter"#android:label="Teknik Defter"#' $M
 
       - name: Sabit debug anahtarı (Google girişi için SHA-1 sabit kalsın)
         if: env.HAS_KEYSTORE == 'true'

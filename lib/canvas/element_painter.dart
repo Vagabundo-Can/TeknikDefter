@@ -6,6 +6,7 @@ import 'package:flutter/painting.dart';
 
 import '../core/format.dart';
 import '../ink/stroke_renderer.dart';
+import '../media/asset_images.dart';
 import '../models/note_models.dart';
 
 // ---------------------------------------------------------------------------
@@ -701,6 +702,10 @@ void paintElement(Canvas c, NoteElement e, ScaleSpec scale) {
       paintSymbol(c, s);
     case LaneElement l:
       paintLane(c, l);
+    case ImageElement i:
+      paintImage(c, i);
+    case AudioElement a:
+      paintAudio(c, a);
     default:
       break;
   }
@@ -785,4 +790,58 @@ void paintText(Canvas c, TextElement t) {
     )..layout(maxWidth: t.boxWidth != null ? math.max(1, t.boxWidth! - t.indent) : double.infinity);
     tp.paint(c, Offset(t.pos.dx + t.indent, y));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Görsel ve ses
+
+void paintImage(Canvas c, ImageElement e) {
+  final img = AssetImages.instance.get(e.assetId);
+  c.save();
+  if (e.rotation != 0) {
+    c.translate(e.rect.center.dx, e.rect.center.dy);
+    c.rotate(e.rotation);
+    c.translate(-e.rect.center.dx, -e.rect.center.dy);
+  }
+  if (img == null) {
+    c.drawRect(e.rect, Paint()..color = const Color(0xFFECEFF1));
+    c.drawRect(
+        e.rect,
+        Paint()
+          ..color = const Color(0xFFB0BEC5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.3);
+    drawText(c, 'Görsel yükleniyor…', e.rect.center, size: 3, color: const Color(0xFF78909C));
+  } else {
+    c.drawImageRect(img, Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()), e.rect,
+        Paint()..filterQuality = FilterQuality.medium);
+  }
+  c.restore();
+}
+
+String formatDuration(int ms) {
+  final s = (ms / 1000).round();
+  return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+}
+
+void paintAudio(Canvas c, AudioElement a) {
+  final r = a.bounds;
+  c.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(4.5)), Paint()..color = const Color(0xFFE3F2FD));
+  c.drawRRect(
+      RRect.fromRectAndRadius(r, const Radius.circular(4.5)),
+      Paint()
+        ..color = const Color(0xFF1565C0)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.3);
+  final cx = r.left + 4.5, cy = r.center.dy;
+  c.drawCircle(Offset(cx, cy), 3.2, Paint()..color = const Color(0xFF1565C0));
+  c.drawPath(
+      Path()
+        ..moveTo(cx - 1.1, cy - 1.7)
+        ..lineTo(cx + 1.9, cy)
+        ..lineTo(cx - 1.1, cy + 1.7)
+        ..close(),
+      Paint()..color = const Color(0xFFFFFFFF));
+  drawText(c, a.label.isEmpty ? 'Ses · ${formatDuration(a.durationMs)}' : '${a.label} · ${formatDuration(a.durationMs)}',
+      Offset(r.left + 9.5, cy), size: 3, color: const Color(0xFF0D47A1), anchor: Alignment.centerLeft);
 }

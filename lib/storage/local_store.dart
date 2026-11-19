@@ -24,6 +24,7 @@ class LocalStore extends ChangeNotifier {
   Future<void> init({Directory? root}) async {
     _root = root ?? Directory('${(await getApplicationSupportDirectory()).path}${Platform.pathSeparator}teknik_defter');
     await Directory('${_root.path}/pages').create(recursive: true);
+    await Directory('${_root.path}/assets').create(recursive: true);
     final nbFile = File('${_root.path}/notebooks.json');
     if (await nbFile.exists()) {
       final j = jsonDecode(await nbFile.readAsString()) as Map<String, dynamic>;
@@ -86,7 +87,26 @@ class LocalStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  NotePage createPage({required String notebookId, required PageMode mode, required PageTemplate template, String? title}) {
+  // --- Ekler (görsel, ses, PDF sayfası): assets/<id>.<ext>, değişmez dosyalar
+  Directory get assetsDir => Directory('${_root.path}/assets');
+  File assetFile(String assetId) => File('${assetsDir.path}/$assetId');
+  bool hasAsset(String assetId) => assetFile(assetId).existsSync();
+  List<String> get localAssetIds =>
+      assetsDir.listSync().whereType<File>().map((f) => f.uri.pathSegments.last).where((n) => !n.endsWith('.tmp')).toList();
+
+  Future<String> addAssetBytes(List<int> bytes, String ext) async {
+    final id = '${newId()}.${ext.replaceAll('.', '').toLowerCase()}';
+    await assetFile(id).writeAsBytes(bytes, flush: true);
+    return id;
+  }
+
+  Future<String> addAssetFile(File src) async {
+    final name = src.uri.pathSegments.last;
+    final ext = name.contains('.') ? name.split('.').last : 'bin';
+    return addAssetBytes(await src.readAsBytes(), ext);
+  }
+
+  NotePage createPage({required String notebookId, required PageMode mode, required PageTemplate template, String? title, double? afterOrder}) {
     final siblings = pagesOf(notebookId);
     final page = NotePage(
       id: newId(),
@@ -97,7 +117,13 @@ class LocalStore extends ChangeNotifier {
       widthMm: template.widthMm,
       heightMm: template.heightMm,
       scale: template.scale,
-      order: siblings.isEmpty ? 0 : siblings.last.order + 1,
+      order: afterOrder == null
+          ? (siblings.isEmpty ? 0 : siblings.last.order + 1)
+          : () {
+              final next = siblings.where((p) => p.order > afterOrder).map((p) => p.order).fold<double?>(null, (m, o) => m == null || o < m ? o : m);
+              return next == null ? afterOrder + 1 : (afterOrder + next) / 2;
+            }(),
+      infinite: template.infinite,
     );
     pages[page.id] = page;
     savePageNow(page);

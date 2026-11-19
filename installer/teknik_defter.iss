@@ -39,3 +39,13 @@ Name: "{autodesktop}\Teknik Defter"; Filename: "{app}\teknik_defter.exe"; Tasks:
 
 [Run]
 Filename: "{app}\teknik_defter.exe"; Description: "Teknik Defter'i başlat"; Flags: nowait postinstall skipifsilent
+
+[Registry]
+; "Birlikte aç" listesinde görün (varsayılan uygulamayı değiştirmez)
+Root: HKA; Subkey: "Software\Classes\TeknikDefter.Dosya"; ValueType: string; ValueName: ""; ValueData: "Teknik Defter"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\TeknikDefter.Dosya\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\teknik_defter.exe,0"
+Root: HKA; Subkey: "Software\Classes\TeknikDefter.Dosya\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\teknik_defter.exe"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\.pdf\OpenWithProgids"; ValueType: string; ValueName: "TeknikDefter.Dosya"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.png\OpenWithProgids"; ValueType: string; ValueName: "TeknikDefter.Dosya"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.jpg\OpenWithProgids"; ValueType: string; ValueName: "TeknikDefter.Dosya"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.jpeg\OpenWithProgids"; ValueType: string; ValueName: "TeknikDefter.Dosya"; ValueData: ""; Flags: uninsdeletevalue

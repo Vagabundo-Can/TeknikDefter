@@ -112,6 +112,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       final remote = await _listAll(api);
       await _syncNotebooks(api, remote[_notebooksName], report);
       await _syncPages(api, remote, report);
+      await _syncAssets(api, remote, report);
       lastSync = DateTime.now();
       lastReport = report;
       lastError = null;
@@ -251,6 +252,29 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
         ..dirty = p.version != versionAtUpload; // yükleme sırasında çizildiyse tekrar gönderilecek
       r.uploaded++;
       await store.savePageNow(p);
+    }
+  }
+
+  /// Ekler değişmez: yerelde olup uzakta olmayan yüklenir, uzakta olup yerelde olmayan indirilir
+  Future<void> _syncAssets(drive.DriveApi api, Map<String, drive.File> remote, SyncReport r) async {
+    final local = store.localAssetIds.toSet();
+    for (final id in local) {
+      if (remote.containsKey('asset_$id')) continue;
+      final bytes = await store.assetFile(id).readAsBytes();
+      final media = drive.Media(Stream<List<int>>.value(bytes), bytes.length);
+      await api.files.create(drive.File()
+        ..name = 'asset_$id'
+        ..parents = [_space], uploadMedia: media, $fields: 'id');
+      r.uploaded++;
+    }
+    for (final e in remote.entries) {
+      if (!e.key.startsWith('asset_')) continue;
+      final id = e.key.substring(6);
+      if (local.contains(id)) continue;
+      final media = await api.files.get(e.value.id!, downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
+      final sink = store.assetFile(id).openWrite();
+      await media.stream.pipe(sink);
+      r.downloaded++;
     }
   }
 

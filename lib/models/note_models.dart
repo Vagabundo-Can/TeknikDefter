@@ -202,6 +202,8 @@ abstract class NoteElement {
       'text' => TextElement.fromBody(id, u, z, j),
       'sym' => SymbolElement.fromBody(id, u, z, j),
       'lane' => LaneElement.fromBody(id, u, z, j),
+      'img' => ImageElement.fromBody(id, u, z, j),
+      'audio' => AudioElement.fromBody(id, u, z, j),
       _ => Tombstone(id: id, updatedAt: u, z: z, originalType: ty),
     };
   }
@@ -714,6 +716,146 @@ class LaneElement extends NoteElement {
       );
 }
 
+/// Görsel (fotoğraf, PDF sayfası arka planı). Dosya yerel "assets/" klasöründe ve Drive'da ayrı durur.
+class ImageElement extends NoteElement {
+  final String assetId; // dosya adı: <id>.<ext>
+  final Rect rect; // mm
+  final double rotation; // radyan (merkez etrafında)
+  final bool locked; // PDF arka planı: seç/sil ile oynamaz
+  const ImageElement({required super.id, required super.updatedAt, required super.z, required this.assetId, required this.rect, this.rotation = 0, this.locked = false});
+
+  @override
+  String get type => 'img';
+  @override
+  Rect get bounds {
+    if (rotation == 0) return rect;
+    final c = rect.center;
+    final pts = [rect.topLeft, rect.topRight, rect.bottomLeft, rect.bottomRight].map((p) => rotatePoint(p, c, rotation));
+    return _boundsOf(pts);
+  }
+
+  ImageElement copyWith({Rect? rect, double? rotation, bool? locked}) => ImageElement(
+      id: id, updatedAt: nowMs(), z: z, assetId: assetId, rect: rect ?? this.rect, rotation: rotation ?? this.rotation, locked: locked ?? this.locked);
+
+  @override
+  ImageElement translated(Offset d) => copyWith(rect: rect.shift(d));
+  @override
+  NoteElement tombstone() => Tombstone(id: id, updatedAt: nowMs(), z: z, originalType: type);
+  @override
+  Map<String, dynamic> bodyJson() => {
+        'a': assetId,
+        'r': [_r(rect.left), _r(rect.top), _r(rect.width), _r(rect.height)],
+        if (rotation != 0) 'rot': rotation,
+        if (locked) 'lk': 1,
+      };
+  factory ImageElement.fromBody(String id, int u, double z, Map<String, dynamic> j) {
+    final r = (j['r'] as List).cast<num>();
+    return ImageElement(
+        id: id,
+        updatedAt: u,
+        z: z,
+        assetId: j['a'] as String,
+        rect: Rect.fromLTWH(r[0].toDouble(), r[1].toDouble(), r[2].toDouble(), r[3].toDouble()),
+        rotation: (j['rot'] as num?)?.toDouble() ?? 0,
+        locked: j['lk'] == 1);
+  }
+}
+
+/// Ses kaydı: sayfada küçük bir oynat düğmesi
+class AudioElement extends NoteElement {
+  final String assetId;
+  final Offset pos;
+  final int durationMs;
+  final String label;
+  const AudioElement({required super.id, required super.updatedAt, required super.z, required this.assetId, required this.pos, required this.durationMs, this.label = ''});
+
+  @override
+  String get type => 'audio';
+  @override
+  Rect get bounds => Rect.fromLTWH(pos.dx, pos.dy, 36, 9);
+  @override
+  AudioElement translated(Offset d) =>
+      AudioElement(id: id, updatedAt: nowMs(), z: z, assetId: assetId, pos: pos + d, durationMs: durationMs, label: label);
+  @override
+  NoteElement tombstone() => Tombstone(id: id, updatedAt: nowMs(), z: z, originalType: type);
+  @override
+  Map<String, dynamic> bodyJson() => {'a': assetId, 'p': _o(pos), 'd': durationMs, if (label.isNotEmpty) 'l': label};
+  factory AudioElement.fromBody(String id, int u, double z, Map<String, dynamic> j) => AudioElement(
+      id: id, updatedAt: u, z: z, assetId: j['a'] as String, pos: _po(j['p']), durationMs: j['d'] as int, label: (j['l'] as String?) ?? '');
+}
+
+Offset rotatePoint(Offset p, Offset c, double a) {
+  final v = p - c;
+  final cs = math.cos(a), sn = math.sin(a);
+  return c + Offset(v.dx * cs - v.dy * sn, v.dx * sn + v.dy * cs);
+}
+
+/// Elemanı c etrafında a radyan döndür (aynı id, yeni zaman damgası)
+NoteElement rotateElement(NoteElement e, Offset c, double a) {
+  Offset r(Offset p) => rotatePoint(p, c, a);
+  final u = nowMs();
+  switch (e) {
+    case StrokeElement s:
+      return StrokeElement(id: s.id, updatedAt: u, z: s.z, style: s.style, points: [
+        for (final p in s.points)
+          () {
+            final q = r(p.o);
+            return InkPoint(q.dx, q.dy, p.p, p.t);
+          }()
+      ]);
+    case ShapeElement s:
+      List<Offset> pts;
+      var kind = s.kind;
+      if (s.kind == ShapeKind.rect) {
+        final rc = Rect.fromPoints(s.points[0], s.points[1]);
+        pts = [rc.topLeft, rc.topRight, rc.bottomRight, rc.bottomLeft].map(r).toList();
+        kind = ShapeKind.polygon;
+      } else if (s.kind == ShapeKind.ellipse) {
+        final rc = Rect.fromPoints(s.points[0], s.points[1]);
+        if ((rc.width - rc.height).abs() < 1e-6) {
+          final nc = r(rc.center);
+          pts = [nc - Offset(rc.width / 2, rc.height / 2), nc + Offset(rc.width / 2, rc.height / 2)];
+        } else {
+          pts = [
+            for (var i = 0; i < 64; i++)
+              r(rc.center + Offset(math.cos(i / 64 * 2 * math.pi) * rc.width / 2, math.sin(i / 64 * 2 * math.pi) * rc.height / 2))
+          ];
+          kind = ShapeKind.polygon;
+        }
+      } else {
+        pts = s.points.map(r).toList();
+      }
+      return ShapeElement(id: s.id, updatedAt: u, z: s.z, kind: kind, style: s.style, fill: s.fill, points: pts);
+    case DimensionElement d:
+      final rightAngle = ((a / (math.pi / 2)).roundToDouble() * math.pi / 2 - a).abs() < 1e-6;
+      return DimensionElement(
+        id: d.id,
+        updatedAt: u,
+        z: d.z,
+        kind: (d.kind == DimKind.horizontal || d.kind == DimKind.vertical) && !rightAngle ? DimKind.aligned : d.kind,
+        points: d.points.map(r).toList(),
+        textOverride: d.textOverride,
+        tolerance: d.tolerance,
+        textHeight: d.textHeight,
+        color: d.color,
+      );
+    case TextElement t:
+      final ctr = t.bounds.center;
+      return t.copyWith(pos: r(ctr) - (ctr - t.pos));
+    case SymbolElement s:
+      return s.copyWith(pos: r(s.pos), rotation: s.rotation + a);
+    case LaneElement l:
+      return LaneElement(
+          id: l.id, updatedAt: u, z: l.z, centerline: l.centerline.map(r).toList(), widthPaper: l.widthPaper, widthReal: l.widthReal, lanes: l.lanes, color: l.color);
+    case ImageElement i:
+      return i.copyWith(rect: i.rect.shift(r(i.rect.center) - i.rect.center), rotation: i.rotation + a);
+    case AudioElement au:
+      return au.translated(r(au.pos) - au.pos);
+    default:
+      return e;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Sayfa ve defter
 
@@ -730,6 +872,7 @@ class NotePage {
   int createdAt;
   int metaUpdatedAt; // başlık/şablon/mod değişiklikleri
   bool deleted;
+  bool infinite; // sonsuz tuval (sayfa sınırı yok)
   String recognizedText; // arama dizini (arka plan tanıma)
   final Map<String, NoteElement> elements;
 
@@ -755,6 +898,7 @@ class NotePage {
     int? metaUpdatedAt,
     this.deleted = false,
     this.recognizedText = '',
+    this.infinite = false,
     Map<String, NoteElement>? elements,
     this.dirty = true,
     this.syncV,
@@ -808,6 +952,7 @@ class NotePage {
       order = remote.order;
       notebookId = remote.notebookId;
       deleted = remote.deleted;
+      infinite = remote.infinite;
       metaUpdatedAt = remote.metaUpdatedAt;
       changed = true;
     } else if (metaUpdatedAt > remote.metaUpdatedAt) {
@@ -852,6 +997,7 @@ class NotePage {
         'mu': metaUpdatedAt,
         if (deleted) 'del': 1,
         if (recognizedText.isNotEmpty) 'rt': recognizedText,
+        if (infinite) 'inf': 1,
         'el': [for (final e in elements.values) e.toJson()],
         if (includeLocal) 'local': {'dirty': dirty, 'syncV': syncV, 'fid': driveFileId},
       };
@@ -877,6 +1023,7 @@ class NotePage {
       metaUpdatedAt: j['mu'] as int,
       deleted: j['del'] == 1,
       recognizedText: (j['rt'] as String?) ?? '',
+      infinite: j['inf'] == 1,
       elements: els,
       dirty: (local?['dirty'] as bool?) ?? false,
       syncV: local?['syncV'] as String?,

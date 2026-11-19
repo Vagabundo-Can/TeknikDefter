@@ -9,7 +9,11 @@ import '../models/note_models.dart';
 import '../recognition/handwriting.dart';
 import '../storage/local_store.dart';
 import '../sync/drive_sync.dart';
+import '../media/audio.dart';
+import '../templates/templates.dart';
 import 'element_editors.dart';
+import 'insert_export.dart';
+import 'new_page_wizard.dart';
 import 'layout.dart';
 import 'pen_glyph.dart';
 import 'sync_button.dart';
@@ -198,7 +202,32 @@ class _EditorScreenState extends State<EditorScreen> {
             d,
             unitOf(ctrl.page.scale)),
         onRequestDimValue: (d) => askDimensionText(context, d),
+        onPlayAudio: (a) => AudioService.instance.toggle(a.assetId, store.assetFile(a.assetId).path),
       );
+
+  void _openPage(NotePage p) {
+    Navigator.of(context).pushReplacement(PageRouteBuilder(
+      pageBuilder: (_, __, ___) => EditorScreen(pageId: p.id),
+      transitionDuration: const Duration(milliseconds: 150),
+      transitionsBuilder: (_, a, __, child) => FadeTransition(opacity: a, child: child),
+    ));
+  }
+
+  Future<void> _addPage({bool choose = false}) async {
+    final page = ctrl.page;
+    var mode = page.mode;
+    var template = templateById(page.templateId);
+    if (choose) {
+      final r = await showNewPageWizard(context, lastMode: page.mode);
+      if (r == null) return;
+      mode = r.mode;
+      template = r.template;
+    }
+    final np = store.createPage(notebookId: page.notebookId, mode: mode, template: template, afterOrder: page.order);
+    _openPage(np);
+  }
+
+  Offset get _viewCenter => _canvasKey.currentState?.viewCenterMm ?? Offset(ctrl.page.widthMm / 2, ctrl.page.heightMm / 3);
 
   /// Araç seçimi: aynı araca ikinci dokunuş ayar panelini açar (Samsung Notes gibi)
   void _pickTool(BuildContext anchor, ToolKind t, {PenType? pen}) {
@@ -319,9 +348,36 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
             if (ff != FormFactor.phone)
               IconButton(tooltip: 'Sayfaya sığdır (Ctrl+0)', onPressed: () => _canvasKey.currentState?.fitPage(), icon: const Icon(Icons.fit_screen)),
-            const SyncButton(),
+            IconButton(
+                tooltip: 'Ekle: görsel, kamera, ses, PDF',
+                onPressed: () => showInsertMenu(context, ctrl, _viewCenter, openPage: _openPage),
+                icon: const Icon(Icons.add_photo_alternate_outlined)),
+            IconButton(tooltip: 'Dışa aktar / Paylaş', onPressed: () => showExportDialog(context, ctrl), icon: const Icon(Icons.ios_share)),
+            if (ff != FormFactor.phone) const SyncButton(),
             PageMenu(ctrl: ctrl),
           ],
+        );
+        final siblings = store.pagesOf(page.notebookId);
+        final idx = siblings.indexWhere((p) => p.id == page.id);
+        final pageNav = Material(
+          elevation: 3,
+          borderRadius: BorderRadius.circular(24),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(
+                tooltip: 'Önceki sayfa',
+                onPressed: idx > 0 ? () => _openPage(siblings[idx - 1]) : null,
+                icon: const Icon(Icons.chevron_left)),
+            Text('${idx + 1} / ${siblings.length}'),
+            IconButton(
+                tooltip: 'Sonraki sayfa',
+                onPressed: idx >= 0 && idx < siblings.length - 1 ? () => _openPage(siblings[idx + 1]) : null,
+                icon: const Icon(Icons.chevron_right)),
+            GestureDetector(
+              onLongPress: () => _addPage(choose: true),
+              child: IconButton(
+                  tooltip: 'Sayfa ekle (uzun bas: şablon seç)', onPressed: () => _addPage(), icon: const Icon(Icons.note_add_outlined)),
+            ),
+          ]),
         );
 
         final body = Focus(
@@ -332,6 +388,7 @@ class _EditorScreenState extends State<EditorScreen> {
             Positioned.fill(child: _canvas()),
             if (ff != FormFactor.phone) Positioned(left: 0, right: 0, top: 10, child: Center(child: _Toolbar(state: this))),
             if (selectionBar != null) Positioned(left: 8, right: 8, top: ff == FormFactor.phone ? 8 : 74, child: Center(child: selectionBar)),
+            Positioned(right: 12, bottom: 12, child: pageNav),
           ]),
         );
 

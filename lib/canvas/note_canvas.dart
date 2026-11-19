@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 
 import '../ink/beautify.dart';
 import '../ink/stroke_renderer.dart';
+import '../media/asset_images.dart';
 import '../models/note_models.dart';
 import 'editor_controller.dart';
 import 'element_painter.dart';
@@ -30,6 +31,7 @@ class NoteCanvas extends StatefulWidget {
   final ElementEdit onEditElement;
   final ShapeParamsRequest onRequestShapeParams;
   final DimValueRequest onRequestDimValue;
+  final void Function(AudioElement a)? onPlayAudio;
   final bool darkPaper;
   const NoteCanvas({
     super.key,
@@ -38,6 +40,7 @@ class NoteCanvas extends StatefulWidget {
     required this.onEditElement,
     required this.onRequestShapeParams,
     required this.onRequestDimValue,
+    this.onPlayAudio,
     this.darkPaper = false,
   });
 
@@ -78,6 +81,8 @@ class NoteCanvasState extends State<NoteCanvas> {
   List<Offset> _lasso = [];
   Offset? _dragStart;
   bool _handleDrag = false; // tek seçili ölçünün ofset noktasını sürükleme
+  bool _rotating = false; // seçimi döndürme tutamacı
+  double _rotStart = 0, _rotAngle = 0;
   String? _lastTapId;
   DateTime _lastTapTime = DateTime(2000);
   final Set<int> _ignored = {}; // avuç / kalem varken parmak
@@ -95,6 +100,11 @@ class NoteCanvasState extends State<NoteCanvas> {
   void initState() {
     super.initState();
     c.addListener(_onController);
+    AssetImages.instance.addListener(_onAssets);
+  }
+
+  void _onAssets() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -111,6 +121,7 @@ class NoteCanvasState extends State<NoteCanvas> {
   @override
   void dispose() {
     c.removeListener(_onController);
+    AssetImages.instance.removeListener(_onAssets);
     _holdTimer?.cancel();
     _cache?.dispose();
     super.dispose();
@@ -128,6 +139,9 @@ class NoteCanvasState extends State<NoteCanvas> {
   }
 
   Offset toPage(Offset screen) => (screen - pan) / zoom;
+
+  /// Ekranın ortasının sayfa koordinatı (mm)
+  Offset get viewCenterMm => toPage(Offset(_size.width / 2, _size.height / 2));
 
   void fitWidth() {
     if (_size.isEmpty) return;
@@ -439,7 +453,14 @@ class NoteCanvasState extends State<NoteCanvas> {
           _armHold();
         }
       case ToolKind.select:
-        if (_dragStart != null) _dragDelta = p - _dragStart!;
+        if (_rotating) {
+          final ctr = c.selectionBounds!.center;
+          var a = math.atan2(p.dy - ctr.dy, p.dx - ctr.dx) - _rotStart;
+          if (_shiftDown || c.ortho) a = (a / (math.pi / 12)).roundToDouble() * math.pi / 12;
+          _rotAngle = a;
+        } else if (_dragStart != null) {
+          _dragDelta = p - _dragStart!;
+        }
       case ToolKind.eraser:
         c.eraseAt(p, zoom);
       case ToolKind.lasso:
@@ -634,9 +655,27 @@ class NoteCanvasState extends State<NoteCanvas> {
     if (mounted) setState(() {});
   }
 
+  Offset? get rotationHandle {
+    final b = c.selectionBounds;
+    if (b == null) return null;
+    return b.topCenter - Offset(0, 1.5 + 30 / zoom);
+  }
+
   void _beginSelect(Offset p) {
     final sel = c.singleSelected;
     _handleDrag = false;
+    _rotating = false;
+    final rh = rotationHandle;
+    if (rh != null && (p - rh).distance < 18 / zoom) {
+      final ctr = c.selectionBounds!.center;
+      _rotating = true;
+      _rotStart = math.atan2(p.dy - ctr.dy, p.dx - ctr.dx);
+      _rotAngle = 0;
+      _dragStart = p;
+      _dragDelta = Offset.zero;
+      _invalidate();
+      return;
+    }
     if (sel is DimensionElement && (p - sel.points.last).distance < 16 / zoom) {
       _handleDrag = true;
       _dragStart = p;
@@ -668,11 +707,19 @@ class NoteCanvasState extends State<NoteCanvas> {
     final start = _dragStart;
     final delta = _dragDelta;
     final handle = _handleDrag;
+    final rotating = _rotating;
+    final angle = _rotAngle;
     _dragStart = null;
     _dragDelta = Offset.zero;
     _handleDrag = false;
+    _rotating = false;
+    _rotAngle = 0;
     _invalidate();
     if (start == null) return;
+    if (rotating) {
+      c.rotateSelection(angle);
+      return;
+    }
     final sel = c.singleSelected;
     if (handle && sel is DimensionElement) {
       final pts = List.of(sel.points);
@@ -684,7 +731,11 @@ class NoteCanvasState extends State<NoteCanvas> {
       c.moveSelection(delta);
       return;
     }
-    // dokunma: çift dokunma → düzenle
+    // dokunma: ses → çal; çift dokunma → düzenle
+    if (sel is AudioElement) {
+      widget.onPlayAudio?.call(sel);
+      return;
+    }
     final now = DateTime.now();
     if (sel != null && _lastTapId == sel.id && now.difference(_lastTapTime) < const Duration(milliseconds: 450)) {
       _lastTapId = null;
@@ -736,10 +787,12 @@ class NoteCanvasState extends State<NoteCanvas> {
     final canvas = Canvas(rec);
     final page = c.page;
     final paper = Rect.fromLTWH(0, 0, page.widthMm, page.heightMm);
-    canvas.drawRect(paper, Paint()..color = widget.darkPaper ? const Color(0xFF1E2226) : const Color(0xFFFFFFFF));
     canvas.save();
-    canvas.clipRect(paper);
-    c.template.painter(canvas, page);
+    if (!page.infinite) {
+      canvas.drawRect(paper, Paint()..color = widget.darkPaper ? const Color(0xFF1E2226) : const Color(0xFFFFFFFF));
+      canvas.clipRect(paper);
+      c.template.painter(canvas, page);
+    }
     final hide = _dragStart != null ? c.selection : const <String>{};
     for (final e in page.visible) {
       if (hide.contains(e.id)) continue;
@@ -758,7 +811,7 @@ class NoteCanvasState extends State<NoteCanvas> {
         zoom = math.max(0.5, (_size.width - 32) / c.page.widthMm);
         pan = Offset(math.max(16, (_size.width - c.page.widthMm * zoom) / 2), 16);
       }
-      final key = (c.page.version, c.page.templateId, _dragStart != null ? Object.hashAll(c.selection) : null, widget.darkPaper);
+      final key = (c.page.version, c.page.templateId, _dragStart != null ? Object.hashAll(c.selection) : null, widget.darkPaper, AssetImages.instance.version);
       if (_cache == null || _cacheKey != key) {
         _cache?.dispose();
         _cache = _buildCache();
@@ -797,18 +850,37 @@ class _CanvasPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final c = s.c;
     final page = c.page;
-    canvas.drawRect(Offset.zero & size, Paint()..color = s.widget.darkPaper ? const Color(0xFF101315) : const Color(0xFFE9ECEF));
+    canvas.drawRect(Offset.zero & size,
+        Paint()..color = page.infinite ? const Color(0xFFFFFFFF) : (s.widget.darkPaper ? const Color(0xFF101315) : const Color(0xFFE9ECEF)));
     canvas.save();
     canvas.translate(s.pan.dx, s.pan.dy);
     canvas.scale(s.zoom);
-    final paper = Rect.fromLTWH(0, 0, page.widthMm, page.heightMm);
-    canvas.drawRect(paper.shift(Offset(0.6, 0.9)), Paint()..color = const Color(0x22000000));
+    if (page.infinite) {
+      // görünür alana nokta ızgara (5 mm, 25 mm'de koyu)
+      final vis = Rect.fromLTWH(-s.pan.dx / s.zoom, -s.pan.dy / s.zoom, size.width / s.zoom, size.height / s.zoom);
+      final step = s.zoom < 1.2 ? 25.0 : 5.0;
+      final dot = Paint()..color = const Color(0x33000000);
+      final r = 0.9 / s.zoom;
+      for (var x = (vis.left / step).floorToDouble() * step; x <= vis.right; x += step) {
+        for (var y = (vis.top / step).floorToDouble() * step; y <= vis.bottom; y += step) {
+          canvas.drawCircle(Offset(x, y), (x % 25 == 0 && y % 25 == 0) ? r * 1.6 : r, dot);
+        }
+      }
+    } else {
+      final paper = Rect.fromLTWH(0, 0, page.widthMm, page.heightMm);
+      canvas.drawRect(paper.shift(Offset(0.6, 0.9)), Paint()..color = const Color(0x22000000));
+    }
     if (s._cache != null) canvas.drawPicture(s._cache!);
 
     // Taşınan seçim
     if (s._dragStart != null) {
       final sel = c.singleSelected;
-      if (s._handleDrag && sel is DimensionElement) {
+      if (s._rotating) {
+        final ctr = c.selectionBounds!.center;
+        for (final e in c.selected) {
+          paintElement(canvas, rotateElement(e, ctr, s._rotAngle), page.scale);
+        }
+      } else if (s._handleDrag && sel is DimensionElement) {
         final pts = List.of(sel.points);
         pts[pts.length - 1] = pts.last + s._dragDelta;
         paintDimension(canvas, sel.copyWith(points: pts), page.scale);
@@ -890,7 +962,22 @@ class _CanvasPainter extends CustomPainter {
             ..strokeWidth = 1.2 / s.zoom);
     }
     final sb = c.selectionBounds;
-    if (sb != null) paintSelection(canvas, s._handleDrag ? sb : sb.shift(s._dragDelta), s.zoom);
+    if (sb != null && !s._rotating) {
+      paintSelection(canvas, s._handleDrag ? sb : sb.shift(s._dragDelta), s.zoom);
+      if (c.tool == ToolKind.select && s._dragStart == null) {
+        final rh = s.rotationHandle!;
+        canvas.drawLine(sb.topCenter - Offset(0, 1.5), rh, Paint()
+          ..color = const Color(0xFF1E88E5)
+          ..strokeWidth = 1.2 / s.zoom);
+        canvas.drawCircle(rh, 9 / s.zoom, Paint()..color = const Color(0xFF1E88E5));
+        // dönme oku simgesi
+        final arc = Rect.fromCircle(center: rh, radius: 5 / s.zoom);
+        canvas.drawArc(arc, -2.6, 4.2, false, Paint()
+          ..color = const Color(0xFFFFFFFF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6 / s.zoom);
+      }
+    }
     canvas.restore();
   }
 

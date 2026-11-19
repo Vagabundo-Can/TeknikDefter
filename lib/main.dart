@@ -1,20 +1,66 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'media/asset_images.dart';
+import 'media/export_import.dart';
 import 'recognition/handwriting.dart';
 import 'storage/local_store.dart';
 import 'sync/drive_sync.dart';
 import 'sync/google_auth.dart';
+import 'ui/editor_screen.dart';
 import 'ui/home_screen.dart';
 
-Future<void> main() async {
+final navigatorKey = GlobalKey<NavigatorState>();
+
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   final store = LocalStore();
   await store.init();
+  AssetImages.instance.store = store;
   final sync = SyncController(store, GoogleAuth.create());
   runApp(TeknikDefterApp(store: store, sync: sync, recognizer: HandwritingRecognizer.create()));
   // giriş + ilk senkron arka planda
   sync.start();
+  IncomingFiles(store).start(args);
+}
+
+/// "Birlikte aç" / "Paylaş" ile gelen dosyalar (Android intent, Windows komut satırı)
+class IncomingFiles {
+  final LocalStore store;
+  IncomingFiles(this.store);
+  static const _ch = MethodChannel('teknik_defter/intent');
+
+  Future<void> start(List<String> args) async {
+    if (Platform.isAndroid) {
+      _ch.setMethodCallHandler((call) async {
+        if (call.method == 'filesReceived') await _handle((call.arguments as List).cast<String>());
+      });
+      try {
+        final initial = await _ch.invokeListMethod<String>('initialFiles');
+        if (initial != null && initial.isNotEmpty) await _handle(initial);
+      } catch (_) {}
+    } else if (args.isNotEmpty) {
+      await _handle(args.where((a) => File(a).existsSync()).toList());
+    }
+  }
+
+  Future<void> _handle(List<String> paths) async {
+    for (final p in paths) {
+      try {
+        final page = await importIncoming(store, p);
+        if (page != null) {
+          // ilk kare çizilene kadar bekle
+          await WidgetsBinding.instance.endOfFrame;
+          navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => EditorScreen(pageId: page.id)));
+        }
+      } catch (e) {
+        debugPrint('Gelen dosya açılamadı $p: $e');
+      }
+    }
+  }
 }
 
 class TeknikDefterApp extends StatelessWidget {
@@ -33,6 +79,7 @@ class TeknikDefterApp extends StatelessWidget {
         Provider.value(value: recognizer),
       ],
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'Teknik Defter',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(colorSchemeSeed: seed, useMaterial3: true, brightness: Brightness.light),

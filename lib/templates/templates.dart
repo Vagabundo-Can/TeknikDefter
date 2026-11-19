@@ -20,6 +20,7 @@ class PageTemplate {
   final double? ruleMm; // el yazısı hizalama çizgi aralığı
   final double ruleOffsetMm;
   final TemplatePainter painter;
+  final bool infinite;
 
   const PageTemplate({
     required this.id,
@@ -33,6 +34,7 @@ class PageTemplate {
     this.gridMm,
     this.ruleMm,
     this.ruleOffsetMm = 0,
+    this.infinite = false,
   });
 }
 
@@ -361,6 +363,7 @@ void _studentEval(Canvas c, NotePage p) {
 
 final templates = <PageTemplate>[
   PageTemplate(id: 'blank', name: 'Boş', description: 'Düz kağıt', modes: _all, painter: _blank),
+  PageTemplate(id: 'infinite', name: 'Sonsuz tuval', description: 'Sınırsız alan, sonra A4/A3 dışa aktar', modes: _all, painter: _blank, infinite: true, gridMm: 5),
   PageTemplate(id: 'lined', name: 'Çizgili', description: '8 mm satır', modes: _all, painter: _lined, ruleMm: 8, ruleOffsetMm: 20),
   PageTemplate(id: 'grid5', name: '5 mm kareli', description: '20 mm ana çizgi', modes: _all, painter: _grid5, gridMm: 5),
   PageTemplate(id: 'dot5', name: '5 mm noktalı', description: 'Nokta ızgara', modes: _all, painter: _dot5, gridMm: 5),
