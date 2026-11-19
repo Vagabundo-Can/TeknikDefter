@@ -387,7 +387,7 @@ class _EditorScreenState extends State<EditorScreen> {
           child: Stack(children: [
             Positioned.fill(child: _canvas()),
             if (ff != FormFactor.phone) Positioned(left: 0, right: 0, top: 10, child: Center(child: _Toolbar(state: this))),
-            if (selectionBar != null) Positioned(left: 8, right: 8, top: ff == FormFactor.phone ? 8 : 74, child: Center(child: selectionBar)),
+            if (selectionBar != null) Positioned(left: 8, right: 8, bottom: 68, child: Center(child: selectionBar)),
             Positioned(right: 12, bottom: 12, child: pageNav),
           ]),
         );
