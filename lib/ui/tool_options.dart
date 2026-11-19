@@ -31,7 +31,7 @@ class ToolOptionsPanel extends StatelessWidget {
   Widget build(BuildContext context) => Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: buildToolOptions(context, ctrl));
 }
 
-Widget _colorDots(List<int> colors, int selected, ValueChanged<int> onPick) => Row(mainAxisSize: MainAxisSize.min, children: [
+Widget _colorDots(List<int> colors, int selected, ValueChanged<int> onPick) => Wrap(runSpacing: 4, children: [
       for (final c in colors)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -51,8 +51,8 @@ Widget _colorDots(List<int> colors, int selected, ValueChanged<int> onPick) => R
         ),
     ]);
 
-Widget _chips<T>(List<T> values, T selected, String Function(T) label, ValueChanged<T> onPick) => Row(
-      mainAxisSize: MainAxisSize.min,
+Widget _chips<T>(List<T> values, T selected, String Function(T) label, ValueChanged<T> onPick) => Wrap(
+      runSpacing: 4,
       children: [
         for (final v in values)
           Padding(
