@@ -104,6 +104,7 @@ void main() {
   const desktop = Size(1440, 900);
 
   testWidgets('ekran görüntüleri', (t) async {
+    debugDisableShadows = false;
     // --- Tablet ana ekran
     await setSize(t, tablet, 1.5, FormFactor.tablet);
     await t.pumpWidget(app(const HomeScreen()));
@@ -163,5 +164,6 @@ void main() {
     await t.pumpWidget(const SizedBox());
     t.view.resetPhysicalSize();
     t.view.resetDevicePixelRatio();
+    debugDisableShadows = true;
   }, skip: !enabled);
 }

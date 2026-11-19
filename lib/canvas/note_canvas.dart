@@ -619,7 +619,7 @@ class NoteCanvasState extends State<NoteCanvas> {
         _cache = _buildCache();
         _cacheKey = key;
       }
-      return MouseRegion(
+      return ClipRect(child: MouseRegion(
         cursor: switch (c.tool) {
           ToolKind.pan => SystemMouseCursors.grab,
           ToolKind.text => SystemMouseCursors.text,
@@ -639,7 +639,7 @@ class NoteCanvasState extends State<NoteCanvas> {
             painter: _CanvasPainter(this),
           ),
         ),
-      );
+      ));
     });
   }
 }

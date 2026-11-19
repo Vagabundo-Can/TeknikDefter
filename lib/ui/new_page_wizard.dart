@@ -101,7 +101,7 @@ class _WizardState extends State<_Wizard> {
               borderRadius: BorderRadius.circular(8),
               onTap: () => Navigator.pop(context, NewPageResult(m, tp)),
               child: Column(children: [
-                Expanded(child: TemplatePreview(template: tp)),
+                Expanded(child: Center(child: TemplatePreview(template: tp))),
                 const SizedBox(height: 6),
                 Text(tp.name, style: Theme.of(context).textTheme.labelLarge, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
                 Text(tp.description, style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),

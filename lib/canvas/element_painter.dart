@@ -400,8 +400,10 @@ void _paintDatum(Canvas c, SymbolElement s) {
   c.drawPath(tri, Paint()..color = color);
   c.drawLine(Offset(0, -h * 0.5), Offset(0, -h * 1.2), p);
   c.drawRect(Rect.fromCenter(center: Offset(0, -h * 1.7), width: h, height: h), p);
-  drawText(c, s.params['letter'] ?? 'A', Offset(0, -h * 1.7), size: h * 0.5, color: color);
   c.restore();
+  // harf her zaman dik okunur
+  final boxCenter = s.pos + Offset(math.sin(s.rotation), -math.cos(s.rotation)) * (h * 1.7);
+  drawText(c, s.params['letter'] ?? 'A', boxCenter, size: h * 0.5, color: color);
 }
 
 void _paintSurface(Canvas c, SymbolElement s) {

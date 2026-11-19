@@ -196,7 +196,6 @@ class _EditorScreenState extends State<EditorScreen> {
         final selectionBar = ctrl.selection.isEmpty ? null : _SelectionBar(ctrl: ctrl, onConvert: _convertToText);
 
         final appBar = AppBar(
-          titleSpacing: 0,
           title: InkWell(
             onTap: _rename,
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

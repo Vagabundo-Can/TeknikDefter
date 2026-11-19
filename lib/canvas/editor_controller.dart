@@ -95,7 +95,7 @@ class EditorController extends ChangeNotifier {
 
   // --- Ölçek yardımcıları
   double paperFromMeters(double m) => page.scale.unit == 'm' ? page.scale.paperFromReal(m) : m * 5; // m sayfası değilse 1 m = 5 mm
-  double get coneSizePaper => math.max(1.4, paperFromMeters(0.3));
+  double get coneSizePaper => math.max(2.2, paperFromMeters(0.4));
   double get motorcycleSizePaper => math.max(8, paperFromMeters(2.2));
 
   // --- Değişiklik geçmişi
