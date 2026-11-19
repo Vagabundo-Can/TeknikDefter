@@ -658,7 +658,7 @@ class NoteCanvasState extends State<NoteCanvas> {
   Offset? get rotationHandle {
     final b = c.selectionBounds;
     if (b == null) return null;
-    return b.topCenter - Offset(0, 1.5 + 30 / zoom);
+    return b.bottomCenter + Offset(0, 1.5 + 30 / zoom); // altta: üst araç çubuğunun altında kalmasın
   }
 
   void _beginSelect(Offset p) {
@@ -966,7 +966,7 @@ class _CanvasPainter extends CustomPainter {
       paintSelection(canvas, s._handleDrag ? sb : sb.shift(s._dragDelta), s.zoom);
       if (c.tool == ToolKind.select && s._dragStart == null) {
         final rh = s.rotationHandle!;
-        canvas.drawLine(sb.topCenter - Offset(0, 1.5), rh, Paint()
+        canvas.drawLine(sb.bottomCenter + Offset(0, 1.5), rh, Paint()
           ..color = const Color(0xFF1E88E5)
           ..strokeWidth = 1.2 / s.zoom);
         canvas.drawCircle(rh, 9 / s.zoom, Paint()..color = const Color(0xFF1E88E5));
