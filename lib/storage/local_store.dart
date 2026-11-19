@@ -120,21 +120,44 @@ class LocalStore extends ChangeNotifier {
     _saveTimers[p.id] = Timer(const Duration(milliseconds: 1500), () => savePageNow(p));
   }
 
-  Future<void> savePageNow(NotePage p) async {
+  final Map<String, Future<void>> _saveChains = {};
+  int _tmpSeq = 0;
+
+  /// Aynı sayfanın kayıtları sıraya girer; her yazım ayrı geçici dosya + atomik değiştirme.
+  Future<void> savePageNow(NotePage p) {
     _saveTimers.remove(p.id)?.cancel();
-    final f = _pageFile(p.id);
-    final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(jsonEncode(p.toJson(includeLocal: true)), flush: true);
-    await tmp.rename(f.path); // atomik değiştir
+    final json = jsonEncode(p.toJson(includeLocal: true)); // anlık görüntü
+    final prev = _saveChains[p.id] ?? Future<void>.value();
+    final next = prev.catchError((_) {}).then((_) async {
+      final f = _pageFile(p.id);
+      final tmp = File('${f.path}.${_tmpSeq++}.tmp');
+      try {
+        await tmp.writeAsString(json, flush: true);
+        await tmp.rename(f.path);
+      } catch (e) {
+        debugPrint('Sayfa kaydedilemedi ${p.id}: $e');
+      }
+    });
+    _saveChains[p.id] = next;
+    return next;
   }
 
-  Future<void> saveNotebooks() async {
-    final f = File('${_root.path}/notebooks.json');
-    await f.writeAsString(jsonEncode({
+  Future<void> _nbChain = Future<void>.value();
+  Future<void> saveNotebooks() {
+    final data = jsonEncode({
       'notebooks': [for (final n in notebooks.values) n.toJson()],
       'local': {'dirty': notebooksDirty, 'syncV': notebooksSyncV, 'fid': notebooksFileId},
-    }));
+    });
+    _nbChain = _nbChain.catchError((_) {}).then((_) async {
+      try {
+        await File('${_root.path}/notebooks.json').writeAsString(data, flush: true);
+      } catch (e) {
+        debugPrint('Defterler kaydedilemedi: $e');
+      }
+    });
+    return _nbChain;
   }
+
 
   Future<void> flush() async {
     for (final id in _saveTimers.keys.toList()) {
