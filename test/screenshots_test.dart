@@ -24,6 +24,8 @@ import 'sample_data.dart';
 
 class _FakeAuth implements GoogleAuth {
   @override
+  bool get configured => true;
+  @override
   String? get email => 'umut@gmail.com';
   @override
   Future<http.Client?> signIn() async => null;

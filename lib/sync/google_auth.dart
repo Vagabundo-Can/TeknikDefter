@@ -18,6 +18,9 @@ const driveScopes = [drive.DriveApi.driveAppdataScope];
 
 abstract class GoogleAuth {
   String? get email;
+
+  /// Bu derlemede Google girişi için gerekli kimlikler tanımlı mı
+  bool get configured => true;
   Future<http.Client?> signInSilently();
   Future<http.Client?> signIn();
   Future<void> signOut();
@@ -26,6 +29,8 @@ abstract class GoogleAuth {
 }
 
 class MobileGoogleAuth implements GoogleAuth {
+  @override
+  bool get configured => true;
   final _gs = GoogleSignIn(scopes: [...driveScopes, 'email']);
   @override
   String? email;
@@ -57,6 +62,9 @@ class DesktopGoogleAuth implements GoogleAuth {
   @override
   String? email;
   gauth.AutoRefreshingAuthClient? _client;
+
+  @override
+  bool get configured => _clientId.isNotEmpty;
 
   gauth.ClientId get _id => gauth.ClientId(_clientId, _clientSecret.isEmpty ? null : _clientSecret);
 

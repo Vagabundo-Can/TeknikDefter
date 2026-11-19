@@ -42,6 +42,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   SyncController(this.store, this.auth);
 
   String? get email => auth.email;
+  bool get configured => auth.configured;
   bool get signedIn => _client != null;
 
   Future<void> start() async {

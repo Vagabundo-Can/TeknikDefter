@@ -25,6 +25,10 @@ class SyncButton extends StatelessWidget {
       onPressed: () async {
         final messenger = ScaffoldMessenger.of(context);
         if (!sync.signedIn) {
+          if (!sync.configured) {
+            showNotConfigured(context);
+            return;
+          }
           await sync.signIn();
           return;
         }
@@ -56,7 +60,7 @@ class AccountButton extends StatelessWidget {
       onSelected: (v) {
         switch (v) {
           case 'in':
-            sync.signIn();
+            sync.configured ? sync.signIn() : showNotConfigured(context);
           case 'sync':
             sync.syncAll();
           case 'out':
@@ -65,4 +69,16 @@ class AccountButton extends StatelessWidget {
       },
     );
   }
+}
+
+void showNotConfigured(BuildContext context) {
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Senkron henüz ayarlanmadı'),
+      content: const Text('Bu sürümde Google hesabı bağlantısı tanımlı değil. Notların bu cihazda güvenle kaydediliyor; '
+          'Google Cloud kurulumu yapılıp yeni sürüm kurulunca senkron açılacak.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Tamam'))],
+    ),
+  );
 }
