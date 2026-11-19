@@ -40,7 +40,8 @@ jobs:
           KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
         run: |
           mkdir -p ~/.android
-          echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+          echo "$KEYSTORE_B64" | tr -d " \r\n\t" | base64 -d > ~/.android/debug.keystore
+          keytool -list -v -keystore ~/.android/debug.keystore -storepass android | grep SHA1
 
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
@@ -91,10 +92,18 @@ jobs:
           sed -i 's/L"teknik_defter"/L"Teknik Defter"/' windows/runner/main.cpp
       - run: flutter pub get
       - name: Windows derle
-        run: >
-          flutter build windows --release
-          --dart-define=GOOGLE_DESKTOP_CLIENT_ID=${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
-          --dart-define=GOOGLE_DESKTOP_CLIENT_SECRET=${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+        shell: pwsh
+        env:
+          RAW_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
+          RAW_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+        run: |
+          # Yapıştırılan metinden geçerli kısmı ayıkla (etiket/boşluk/JSON olsa da)
+          $all = "$env:RAW_ID $env:RAW_SECRET"
+          $id = [regex]::Match($all, '[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com').Value
+          $sec = [regex]::Match($all, 'GOCSPX-[A-Za-z0-9_\-]+').Value
+          Write-Host "Client ID bulundu: $([bool]$id) · Secret bulundu: $([bool]$sec)"
+          flutter build windows --release "--dart-define=GOOGLE_DESKTOP_CLIENT_ID=$id" "--dart-define=GOOGLE_DESKTOP_CLIENT_SECRET=$sec"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Paketle (taşınabilir zip + kurulum)
         shell: pwsh
         run: |
