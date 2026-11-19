@@ -67,7 +67,12 @@ Future<void> setCallNotes(bool on) async {
 
 /// Son açılan sayfa (widget'taki "Son sayfa" düğmesi için)
 Future<void> rememberLastPage(NotePage p) async {
-  final prefs = await SharedPreferences.getInstance();
+  final SharedPreferences prefs;
+  try {
+    prefs = await SharedPreferences.getInstance();
+  } catch (_) {
+    return;
+  }
   await prefs.setString('lastPageId', p.id);
   await prefs.setString('lastPageTitle', p.title);
   if (Platform.isAndroid) {

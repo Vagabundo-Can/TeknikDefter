@@ -11,6 +11,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/gestures.dart';
+import 'package:teknik_defter/models/note_models.dart';
+import 'package:teknik_defter/ui/element_editors.dart';
+import 'package:teknik_defter/ui/presentation.dart';
 import 'package:teknik_defter/canvas/tools.dart';
 import 'package:teknik_defter/recognition/handwriting.dart';
 import 'package:teknik_defter/storage/local_store.dart';
@@ -59,6 +64,7 @@ void main() {
 
   setUpAll(() async {
     if (!enabled) return;
+    SharedPreferences.setMockInitialValues({});
     await _loadFonts();
     store = LocalStore();
     await store.init(root: await Directory.systemTemp.createTemp('td'));
@@ -153,6 +159,21 @@ void main() {
     await shot(t, '20_panel_motosiklet', 1.5);
     await editor('21_secili_olcu', ids.bracketPage, ToolKind.select, const Rect.fromLTWH(15, 40, 180, 135), sel: {ids.diaDim});
     await editor('22_metin_listeler', ids.bracketPage, ToolKind.text, const Rect.fromLTWH(10, 150, 190, 90));
+
+    // --- Sağ tık menüsü, ölçü tuş takımı, sunum modu
+    await editor('23_sag_tik_menu', ids.bracketPage, ToolKind.select, const Rect.fromLTWH(15, 40, 180, 135));
+    await t.tapAt(const Offset(1100, 650), buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);
+    await t.pump(const Duration(milliseconds: 400));
+    await shot(t, '23_sag_tik_menu', 1.5);
+    await editor('24_olcu_tus_takimi', ids.bracketPage, ToolKind.dimension, const Rect.fromLTWH(15, 40, 180, 135));
+    final ctx = t.element(find.byType(EditorScreen));
+    final dia = store.pages[ids.bracketPage]!.elements[ids.diaDim] as DimensionElement;
+    showDimNumpad(ctx, dia, store.pages[ids.bracketPage]!.scale);
+    await t.pump(const Duration(milliseconds: 400));
+    await shot(t, '24_olcu_tus_takimi', 1.5);
+    await t.pumpWidget(const SizedBox());
+    await t.pumpWidget(app(PresentationScreen(pages: store.pagesOf(ids.motoNotebook), initialIndex: 0)));
+    await shot(t, '25_sunum_modu', 1.5);
 
     // --- Telefon
     await setSize(t, phone, 2.625, FormFactor.phone);
