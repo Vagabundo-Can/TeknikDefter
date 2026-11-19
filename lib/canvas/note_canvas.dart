@@ -125,6 +125,15 @@ class NoteCanvasState extends State<NoteCanvas> {
     });
   }
 
+  /// Sayfadaki bir dikdörtgeni (mm) ekrana sığdır
+  void zoomToRect(Rect r) {
+    if (_size.isEmpty) return;
+    setState(() {
+      zoom = math.min((_size.width - 32) / r.width, (_size.height - 32) / r.height);
+      pan = Offset((_size.width - r.width * zoom) / 2, (_size.height - r.height * zoom) / 2) - r.topLeft * zoom;
+    });
+  }
+
   void zoomAt(Offset focal, double factor) {
     final before = toPage(focal);
     setState(() {

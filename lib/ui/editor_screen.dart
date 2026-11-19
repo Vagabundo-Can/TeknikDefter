@@ -15,7 +15,10 @@ import 'tool_options.dart';
 
 class EditorScreen extends StatefulWidget {
   final String pageId;
-  const EditorScreen({super.key, required this.pageId});
+  final ToolKind? initialTool;
+  final Set<String>? debugSelection;
+  final Rect? debugView;
+  const EditorScreen({super.key, required this.pageId, this.initialTool, this.debugSelection, this.debugView});
   @override
   State<EditorScreen> createState() => _EditorScreenState();
 }
@@ -39,9 +42,14 @@ class _EditorScreenState extends State<EditorScreen> {
       recognizer: context.read<HandwritingRecognizer>(),
       onPageChanged: sync.pageChanged,
     );
+    if (widget.initialTool != null) ctrl.tool = widget.initialTool!;
+    if (widget.debugSelection != null) ctrl.selection.addAll(widget.debugSelection!);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (formFactorOf(context) == FormFactor.phone) ctrl.update(() => ctrl.stylusOnly = false);
-      if (page.mode == PageMode.moto) ctrl.update(() => ctrl.penType = PenType.ballpoint);
+      if (page.mode == PageMode.moto && widget.initialTool == null) ctrl.update(() => ctrl.penType = PenType.ballpoint);
+      if (widget.debugView != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _canvasKey.currentState?.zoomToRect(widget.debugView!));
+      }
     });
     store.addListener(_onStore);
     _lastVersion = page.version;

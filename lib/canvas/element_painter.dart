@@ -21,6 +21,7 @@ void drawText(Canvas c, String text, Offset at,
     text: TextSpan(
         text: text,
         style: TextStyle(
+            fontFamily: 'Roboto',
             fontSize: size,
             color: color,
             height: 1.0,
@@ -39,7 +40,7 @@ void drawText(Canvas c, String text, Offset at,
 
 Size measureText(String text, double size) {
   final tp = TextPainter(
-    text: TextSpan(text: text, style: TextStyle(fontSize: size, height: 1.0)),
+    text: TextSpan(text: text, style: TextStyle(fontFamily: 'Roboto', fontSize: size, height: 1.0)),
     textDirection: TextDirection.ltr,
   )..layout();
   return tp.size;
