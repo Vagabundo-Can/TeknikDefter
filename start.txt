@@ -1,0 +1,7 @@
+Starting: Intent { cmp=com.vagabundo.teknik_defter/.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.vagabundo.teknik_defter/.MainActivity
+TotalTime: 4392
+WaitTime: 4398
+Complete
