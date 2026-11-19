@@ -571,7 +571,7 @@ class _NumpadState extends State<_Numpad> {
               child: FilledButton.tonal(
                 style: FilledButton.styleFrom(backgroundColor: color, padding: EdgeInsets.zero),
                 onPressed: () => _key(k),
-                child: Text(k, style: const TextStyle(fontSize: 22)),
+                child: k == '⌫' ? const Icon(Icons.backspace_outlined) : Text(k, style: const TextStyle(fontSize: 22)),
               ),
             ),
           ),
